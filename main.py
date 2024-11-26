@@ -12,13 +12,21 @@ cursor = conn.cursor()
 cursor.execute('''CREATE TABLE IF NOT EXISTS clock_logs (
                       id INTEGER PRIMARY KEY,
                       user_id INTEGER,
-                      clock_in_time TEXT
+                      clock_in_time TEXT,
+                      clock_out_time TEXT
                  )''')
+
 cursor.execute('''CREATE TABLE IF NOT EXISTS users (
                       user_id INTEGER PRIMARY KEY,
                       name TEXT,
                       face_encoding BLOB
                  )''')
+
+cursor.execute("PRAGMA table_info(clock_logs)")
+columns = [row[1] for row in cursor.fetchall()]
+if "clock_out_time" not in columns:
+    cursor.execute("ALTER TABLE clock_logs ADD COLUMN clock_out_time TEXT")
+    conn.commit()
 
 # Initialize CustomTkinter
 ctk.set_appearance_mode("dark")
@@ -52,9 +60,10 @@ class ClockingApp(ctk.CTk):
         self.grid_rowconfigure(0, weight=1)
 
     def create_nav_buttons(self):
-        ctk.CTkLabel(self.nav_frame, text="Navigation", font=("Arial", 18, "bold")).pack(pady=20)
+        ctk.CTkLabel(self.nav_frame, text="Navigation", font=("Poppins", 18, "bold")).pack(pady=20)
         nav_buttons = [
             ("Home", self.show_home_screen),
+            ("Admin", self.show_admin_panel),
             ("Register User", self.show_registration_screen),
             ("Clock In", self.start_clock_in),
             ("View Logs", self.show_logs),
@@ -64,30 +73,81 @@ class ClockingApp(ctk.CTk):
 
     def show_home_screen(self):
         self.clear_content_frame()
-        ctk.CTkLabel(self.content_frame, text="Welcome to the Clocking System", font=("Arial", 24, "bold")).pack(pady=30)
-        ctk.CTkLabel(self.content_frame, text="Use the navigation panel to get started.", font=("Arial", 16)).pack()
+        ctk.CTkLabel(self.content_frame, text="Welcome to the Clocking System", font=("Poppins", 24, "bold")).pack(pady=30)
+        ctk.CTkLabel(self.content_frame, text="Use the navigation panel to get started.", font=("Poppins", 16)).pack()
+
+    def show_admin_panel(self):
+        self.clear_content_frame()
+        ctk.CTkLabel(self.content_frame, text="Admin Panel", font=("Poppins", 24, "bold")).pack(pady=20)
+
+        users_frame = ctk.CTkScrollableFrame(self.content_frame, width=500, height=300)
+        users_frame.pack(pady=10)
+
+        cursor.execute("SELECT * FROM users")
+        users = cursor.fetchall()
+
+        if not users:
+            ctk.CTkLabel(users_frame, text="No users found.", font=("Poppins", 14)).pack(pady=20)
+        else:
+            for user in users:
+                user_frame = ctk.CTkFrame(users_frame)
+                user_frame.pack(pady=5, fill="x", padx=10)
+
+                ctk.CTkLabel(user_frame, text=f"ID: {user[0]}, Name: {user[1]}", font=("Poppins", 14)).pack(side="left", padx=10)
+                ctk.CTkButton(user_frame, text="Edit", command=lambda u=user: self.edit_user(u)).pack(side="left", padx=5)
+                ctk.CTkButton(user_frame, text="Delete", command=lambda u=user: self.delete_user(u)).pack(side="left", padx=5)
+
+        ctk.CTkButton(self.content_frame, text="Add User", command=self.show_registration_screen, width=200).pack(pady=20)
+
+    def edit_user(self, user):
+        self.clear_content_frame()
+        ctk.CTkLabel(self.content_frame, text="Edit User", font=("Poppins", 24, "bold")).pack(pady=20)
+
+        name_entry = ctk.CTkEntry(self.content_frame, placeholder_text="Enter New Name", width=400)
+        name_entry.insert(0, user[1])
+        name_entry.pack(pady=10)
+
+        def save_changes():
+            new_name = name_entry.get()
+            if new_name.strip():
+                cursor.execute("UPDATE users SET name = ? WHERE user_id = ?", (new_name, user[0]))
+                conn.commit()
+                messagebox.showinfo("Success", "User updated successfully!")
+                self.show_admin_panel()
+            else:
+                messagebox.showerror("Error", "Name cannot be empty.")
+
+        ctk.CTkButton(self.content_frame, text="Save Changes", command=save_changes, width=200).pack(pady=20)
+
+    def delete_user(self, user):
+        if messagebox.askyesno("Confirm Delete", "Are you sure you want to delete this user?"):
+            cursor.execute("DELETE FROM users WHERE user_id = ?", (user[0],))
+            conn.commit()
+            messagebox.showinfo("Success", "User deleted successfully!")
+            self.show_admin_panel()
 
     def show_registration_screen(self):
         self.clear_content_frame()
-
-        ctk.CTkLabel(self.content_frame, text="Register User", font=("Arial", 24, "bold")).pack(pady=20)
+        ctk.CTkLabel(self.content_frame, text="Register User", font=("Poppins", 24, "bold")).pack(pady=20)
         name_entry = ctk.CTkEntry(self.content_frame, placeholder_text="Enter Name", width=400)
         name_entry.pack(pady=10)
 
         def capture_and_register():
-            name = name_entry.get()
-            if name.strip():
-                self.register_user(name)
-                messagebox.showinfo("Success", "User registered successfully!")
-            else:
+            name = name_entry.get().strip()
+            if not name:
                 messagebox.showerror("Error", "Name cannot be empty.")
+                return
+            try:
+                self.register_user(name)
+            except Exception as e:
+                messagebox.showerror("Error", f"Failed to register user: {str(e)}")
 
-        ctk.CTkButton(self.content_frame, text="Capture & Register", command=capture_and_register, width=200).pack(pady=20)
+        ctk.CTkButton(self.content_frame, text="Register", command=capture_and_register, width=200).pack(pady=20)
 
     def start_clock_in(self):
         self.clear_content_frame()
-        ctk.CTkLabel(self.content_frame, text="Clock In", font=("Arial", 24, "bold")).pack(pady=20)
-        ctk.CTkLabel(self.content_frame, text="Looking for faces...", font=("Arial", 16)).pack(pady=10)
+        ctk.CTkLabel(self.content_frame, text="Clock In", font=("Poppins", 24, "bold")).pack(pady=20)
+        ctk.CTkLabel(self.content_frame, text="Looking for faces...", font=("Poppins", 16)).pack(pady=10)
         self.clock_in()
 
     def clock_in(self):
@@ -104,27 +164,10 @@ class ClockingApp(ctk.CTk):
             if not ret:
                 messagebox.showerror("Camera Error", "Failed to read from the camera. Please try again.")
                 break
-
-            rgb_frame = frame[:, :, ::-1]
-            face_locations = face_recognition.face_locations(rgb_frame)
-            face_encodings = face_recognition.face_encodings(rgb_frame, face_locations)
-
-            for face_encoding in face_encodings:
-                matches = face_recognition.compare_faces(self.known_face_encodings, face_encoding)
-                if True in matches:
-                    match_index = matches.index(True)
-                    user_id = self.known_face_ids[match_index]
-                    self.log_clock_in(user_id)  
-                    face_recognized = True
-                    break
-
-            
             cv2.imshow("Camera - Press Q to Quit", frame)
-
             if face_recognized or (cv2.waitKey(1) & 0xFF == ord('q')):
                 break
 
-        
         video_capture.release()
         cv2.destroyAllWindows()
 
@@ -134,46 +177,36 @@ class ClockingApp(ctk.CTk):
             messagebox.showwarning("Clock In Failed", "No recognized face. Please try again.")
 
     def register_user(self, name):
-        video_capture = cv2.VideoCapture(0)  
+        video_capture = cv2.VideoCapture(0)
         if not video_capture.isOpened():
             messagebox.showerror("Camera Error", "Unable to access the camera. Please check your device.")
             return
 
         messagebox.showinfo("Camera Active", "Look at the camera. Capturing your face...")
         face_captured = False
+        max_attempts = 10
 
-        while True:
+        for attempt in range(max_attempts):
             ret, frame = video_capture.read()
             if not ret:
                 messagebox.showerror("Camera Error", "Failed to read from the camera. Please try again.")
                 break
-
             rgb_frame = frame[:, :, ::-1]
             face_locations = face_recognition.face_locations(rgb_frame)
 
             if face_locations:
-                
-                face_encoding = face_recognition.face_encodings(rgb_frame, face_locations)[0]
+                try:
+                    face_encoding = face_recognition.face_encodings(rgb_frame, face_locations)[0]
+                    cursor.execute("INSERT INTO users (name, face_encoding) VALUES (?, ?)", (name, face_encoding.tobytes()))
+                    conn.commit()
+                    self.load_known_faces()
+                    face_captured = True
+                    break
+                except Exception as e:
+                    messagebox.showerror("Database Error", f"Failed to register face encoding: {str(e)}")
+                    break
 
-                
-                cursor.execute("INSERT INTO users (name, face_encoding) VALUES (?, ?)", (name, face_encoding.tobytes()))
-                conn.commit()
-
-                
-                self.load_known_faces()
-                face_captured = True
-                break
-
-            
-            cv2.imshow("Camera - Press Q to Quit", frame)
-
-            if cv2.waitKey(1) & 0xFF == ord('q'):
-                break
-
-        
         video_capture.release()
-        cv2.destroyAllWindows()
-
         if face_captured:
             messagebox.showinfo("Success", "Face registered successfully!")
         else:
@@ -182,39 +215,34 @@ class ClockingApp(ctk.CTk):
     def load_known_faces(self):
         self.known_face_ids = []
         self.known_face_encodings = []
-
         cursor.execute("SELECT user_id, face_encoding FROM users")
-        for user_id, face_encoding_blob in cursor.fetchall():
-            face_encoding = np.frombuffer(face_encoding_blob, dtype=np.float64)
+        for user_id, face_encoding in cursor.fetchall():
             self.known_face_ids.append(user_id)
-            self.known_face_encodings.append(face_encoding)
-
-    def log_clock_in(self, user_id):
-        time_now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-        cursor.execute("INSERT INTO clock_logs (user_id, clock_in_time) VALUES (?, ?)", (user_id, time_now))
-        conn.commit()
-        messagebox.showinfo("Clock In Successful", f"User {user_id} clocked in at {time_now}")
-
-    def show_logs(self):
-        self.clear_content_frame()
-
-        ctk.CTkLabel(self.content_frame, text="Clock Logs", font=("Arial", 24, "bold")).pack(pady=20)
-        logs_frame = ctk.CTkScrollableFrame(self.content_frame, width=500, height=300)
-        logs_frame.pack(pady=10)
-
-        cursor.execute("SELECT * FROM clock_logs")
-        logs = cursor.fetchall()
-        if not logs:
-            messagebox.showinfo("Info", "No logs available.")
-            return
-
-        for log in logs:
-            ctk.CTkLabel(logs_frame, text=f"User {log[1]} - {log[2]}", font=("Arial", 14)).pack(anchor="w", pady=5)
+            self.known_face_encodings.append(np.frombuffer(face_encoding, dtype=np.float64))
 
     def clear_content_frame(self):
         for widget in self.content_frame.winfo_children():
             widget.destroy()
 
+    def show_logs(self):
+        self.clear_content_frame()
+        ctk.CTkLabel(self.content_frame, text="Clocking Logs", font=("Poppins", 24, "bold")).pack(pady=20)
+        logs_frame = ctk.CTkScrollableFrame(self.content_frame, width=500, height=300)
+        logs_frame.pack(pady=10)
 
-app = ClockingApp()
-app.mainloop()
+        cursor.execute("SELECT * FROM clock_logs")
+        logs = cursor.fetchall()
+
+        if not logs:
+            ctk.CTkLabel(logs_frame, text="No logs found.", font=("Poppins", 14)).pack(pady=20)
+        else:
+            for log in logs:
+                log_text = f"User ID: {log[1]}, Clock-In: {log[2]}, Clock-Out: {log[3]}"
+                ctk.CTkLabel(logs_frame, text=log_text, font=("Poppins", 14)).pack(anchor="w", padx=10)
+
+        ctk.CTkButton(self.content_frame, text="Refresh Logs", command=self.show_logs, width=200).pack(pady=20)
+
+
+if __name__ == "__main__":
+    app = ClockingApp()
+    app.mainloop()
