@@ -5,6 +5,7 @@ import face_recognition
 import sqlite3
 import numpy as np
 from datetime import datetime
+import time
 
 # Database setup
 conn = sqlite3.connect('clocking_system.db')
@@ -159,14 +160,36 @@ class ClockingApp(ctk.CTk):
         messagebox.showinfo("Clock In", "Looking for faces. Please face the camera.")
         face_recognized = False
 
+        known_face_encodings = self.known_face_encodings
+
         while True:
             ret, frame = video_capture.read()
             if not ret:
                 messagebox.showerror("Camera Error", "Failed to read from the camera. Please try again.")
                 break
-            cv2.imshow("Camera - Press Q to Quit", frame)
-            if face_recognized or (cv2.waitKey(1) & 0xFF == ord('q')):
-                break
+
+            rgb_frame = frame[:, :, ::-1]
+            face_locations = face_recognition.face_locations(rgb_frame)
+
+            if face_locations:
+                face_encodings = face_recognition.face_encodings(rgb_frame, face_locations)
+
+                for face_encoding in face_encodings:
+                    matches = face_recognition.compare_faces(known_face_encodings, face_encoding)
+
+                    if True in matches:
+                        first_match_index = matches.index(True)
+                        recognized_name = self.known_face_ids[first_match_index]
+                        face_recognized = True
+                        break
+
+                    for (top, right, bottom, left) in face_locations:
+                        cv2.rectangle(frame, (left, top), (right, bottom), (0,255,0), 2)
+
+                        if face_recognized or (cv2.waitKey(1) & 0xFF == ord ('q')):
+                            break
+
+            
 
         video_capture.release()
         cv2.destroyAllWindows()
@@ -185,20 +208,32 @@ class ClockingApp(ctk.CTk):
         messagebox.showinfo("Camera Active", "Look at the camera. Capturing your face...")
         face_captured = False
         max_attempts = 10
+        capture_time = 20
+        attempt_counter = 0
+        start_time = time.time()
 
-        for attempt in range(max_attempts):
+        while attempt_counter < max_attempts:
             ret, frame = video_capture.read()
             if not ret:
-                messagebox.showerror("Camera Error", "Failed to read from the camera. Please try again.")
+                messagebox.showerror("Camera Error", f"Attempt {attempt_counter + 1}: Failed to read from the camera. Please try again.")
                 break
-            rgb_frame = frame[:, :, ::-1]
+
+            rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
             face_locations = face_recognition.face_locations(rgb_frame)
 
             if face_locations:
+
+                for (top, right, bottom, left) in face_locations:
+                    cv2.rectangle(frame, (left, top), (right, bottom), (0,255,0), 2)
+                
+                face_encodings = face_recognition.face_encodings(rgb_frame, face_locations)
+
+                if len(face_encodings) > 0:
+                    face_encoding = face_encodings[0]
                 try:
-                    face_encoding = face_recognition.face_encodings(rgb_frame, face_locations)[0]
                     cursor.execute("INSERT INTO users (name, face_encoding) VALUES (?, ?)", (name, face_encoding.tobytes()))
                     conn.commit()
+                    self.known_face_encodings.append(face_encoding)
                     self.load_known_faces()
                     face_captured = True
                     break
@@ -206,7 +241,27 @@ class ClockingApp(ctk.CTk):
                     messagebox.showerror("Database Error", f"Failed to register face encoding: {str(e)}")
                     break
 
+            cv2.imshow("Camera", frame)
+
+            key = cv2.waitKey(1)
+
+            if key == ord('q'):
+                break
+
+            attempt_counter +=1
+
+            elapsed_time = time.time() - start_time
+            if elapsed_time >= capture_time:
+                retry = messagebox.askretrycancel("Timeout", "Face capture timed out. Please try again.")
+            if retry:
+                start_time = time.time()
+                attempt_counter = 0
+            
+            else:
+                break
+
         video_capture.release()
+        cv2.destroyAllWindows()
         if face_captured:
             messagebox.showinfo("Success", "Face registered successfully!")
         else:
