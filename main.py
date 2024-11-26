@@ -178,14 +178,12 @@ class ClockingApp(ctk.CTk):
                     matches = face_recognition.compare_faces(known_face_encodings, face_encoding)
 
                     if True in matches:
-                        first_match_index = matches.index(True)
-                        recognized_name = self.known_face_ids[first_match_index]
                         face_recognized = True
                         break
 
                     for (top, right, bottom, left) in face_locations:
                         cv2.rectangle(frame, (left, top), (right, bottom), (0,255,0), 2)
-
+                    
                         if face_recognized or (cv2.waitKey(1) & 0xFF == ord ('q')):
                             break
 
