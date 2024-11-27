@@ -56,15 +56,15 @@ ctk.set_default_color_theme("blue")
 
 
 class ClockingApp(ctk.CTk):
-    def __init__(self):
+    def __init__(self, conn):
         super().__init__()
         self.title("Advanced Clocking System")
         self.geometry("900x600")
         self.configure(padx=20, pady=20)
 
         # Known faces and IDs
+        self.conn = conn
         self.known_face_encodings = []
-        self.known_face_ids = []
         self.load_known_faces()
 
         # Navigation frame
@@ -214,63 +214,72 @@ class ClockingApp(ctk.CTk):
 
         ctk.CTkButton(self.content_frame, text="Register", command=capture_and_register, width=200).pack(pady=20)
 
-    def start_clock_in(self):
-        self.clear_content_frame()
+        def start_clock_in(self):
+         self.clear_content_frame()
         ctk.CTkLabel(self.content_frame, text="Clock In", font=("Poppins", 24, "bold")).pack(pady=20)
         ctk.CTkLabel(self.content_frame, text="Looking for faces...", font=("Poppins", 16)).pack(pady=10)
         self.clock_in()
 
-    def clock_in(self):
-        video_capture = cv2.VideoCapture(0)
-        if not video_capture.isOpened():
+        def clock_in(self):
+         video_capture = cv2.VideoCapture(0)
+         if not video_capture.isOpened():
             messagebox.showerror("Camera Error", "Unable to access camera. Please check your device.")
             return
 
-        messagebox.showinfo("Clock In", "Looking for faces. Please face the camera.")
-        face_recognized = False
+         messagebox.showinfo("Clock In", "Looking for faces. Please face the camera.")
+         face_recognized = False
 
-        while True:
-            ret, frame = video_capture.read()
-            if not ret:
+         while True:
+             ret, frame = video_capture.read()
+             if not ret:
                 messagebox.showerror("Camera Error", "Failed to read from the camera. Please try again.")
                 break
-            rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-            face_locations = face_recognition.face_locations(rgb_frame)
-            if not face_locations:
+            
+             rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+             face_locations = face_recognition.face_locations(rgb_frame, model = "hog")
+            
+             if not face_locations:
                print("No faces detected.")
-               return
-            face_encodings = face_recognition.face_encodings(rgb_frame, face_locations)
+               continue
+            
+             face_encodings = face_recognition.face_encodings(rgb_frame, face_locations)
 
-        for face_encoding in face_encodings:
+         for face_encoding in face_encodings:
             matches = face_recognition.compare_faces(self.known_face_encodings, face_encoding)
             if True in matches:
                 matched_index = matches.index(True)
                 user_id = self.known_face_ids[matched_index]
                 messagebox.showinfo("Clock In Success", f"User ID {user_id} recognized. Clock-in recorded!")
                 face_recognized = True
+                break
                 
-            else:
-                if cv2.waitKey(1) & 0xFF == ord('q'):
-                    break
-
-            
             if face_recognized or (cv2.waitKey(1) & 0xFF == ord('q')):
                 break
 
-        video_capture.release()
-        cv2.destroyAllWindows()
+         video_capture.release()
+         cv2.destroyAllWindows()
 
         
-        if not face_recognized:
+         if not face_recognized:
             messagebox.showwarning("Clock In Failed", "No recognized face. Please try again.")
     
-    
+
+    def load_known_faces(self):
+        self.known_face_encodings = []
+        cursor = self.conn.cursor()
+        cursor.execute("SELECT face_encoding FROM users")
+        encodings = cursor.fetchall()
+
+        for encoding in encodings:
+         
+         if encoding[0] is not None:
+          self.known_face_encodings.append(np.frombuffer(encoding[0], np.uint8))  
+
     #Face Registration Validation 
-    def is_face_duplicate(face_encoding, self):
+    def is_face_duplicate(self, face_encoding):
        matches = face_recognition.compare_faces(self.known_face_encodings, face_encoding, tolerance=0.6)
        return True in matches
-
-
+    
     def register_user(self, name, emp_number, gender, occupation, conn):
         video_capture = cv2.VideoCapture(0)
         if not video_capture.isOpened():
@@ -300,14 +309,14 @@ class ClockingApp(ctk.CTk):
             user_id = cursor.lastrowid
         
 
-        for _ in range(10):
+        for _ in range(5):
             ret, frame = video_capture.read()
             if not ret:
                 messagebox.showerror("Camera Error", "Failed to read from the camera. Please try again.")
                 break
             
             rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-            face_locations = face_recognition.face_locations(rgb_frame)
+            face_locations = face_recognition.face_locations(rgb_frame, model = "hog")
 
             if face_locations:
                 try:
@@ -315,7 +324,9 @@ class ClockingApp(ctk.CTk):
                     if self.is_face_duplicate(face_encoding):
                         messagebox.showerror("Error", "This face is already registered.")
                         break
-                    cursor.execute("UPDATE users SET face_encoding = ? WHERE user_id = ?", (face_encoding.tobytes(), user_id))
+
+                    encoded_face = face_encoding.tobytes()
+                    cursor.execute("UPDATE users SET face_encoding = ? WHERE user_id = ?", (encoded_face, user_id))
                     conn.commit()
                     self.load_known_faces()
                     face_captured = True
@@ -330,15 +341,7 @@ class ClockingApp(ctk.CTk):
             messagebox.showinfo("Success", "Face registered successfully!")
         else:
             messagebox.showerror("Face Not Detected", "No face detected. Please try again.")
-
-    def load_known_faces(self):
-        self.known_face_ids = []
-        self.known_face_encodings = []
-        cursor.execute("SELECT user_id, face_encoding FROM users WHERE face_encoding IS NOT NULL")
-        for user_id, face_encoding in cursor.fetchall():
-            self.known_face_ids.append(user_id)
-            self.known_face_encodings.append(np.frombuffer(face_encoding, dtype=np.float64))
-
+  
     def clear_content_frame(self):
         for widget in self.content_frame.winfo_children():
             widget.destroy()
@@ -363,5 +366,5 @@ class ClockingApp(ctk.CTk):
     
 
 if __name__ == "__main__":
-    app = ClockingApp()
+    app = ClockingApp(conn)
     app.mainloop()
