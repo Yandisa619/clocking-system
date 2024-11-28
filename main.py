@@ -125,7 +125,7 @@ class ClockingApp(ctk.CTk):
                 ctk.CTkButton(user_frame, text="Delete", command=lambda u=user: self.delete_user(u)).pack(side="left", padx=5)
 
         ctk.CTkButton(self.content_frame, text="Add User", command=self.show_registration_screen, width=200).pack(pady=20)
-        ctk.CTkButton(self.content_frame, text="Logout", command=self.logout, width=200, fg_color="red", hover_color="darkred").pack(pady=20)
+        ctk.CTkButton(self.content_frame, text="Logout", command=self.logout, width=200).pack(pady=20)
 
 
     def edit_user(self, user):
