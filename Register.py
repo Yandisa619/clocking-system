@@ -136,6 +136,8 @@ def register_user():
         conn.close()
         return
     
+    
+    
     # Insert new user
     try:
         # Insert the new user
@@ -195,6 +197,7 @@ def forgot_password(event=None):
 
     email_entry = ctk.CTkEntry(forgot_window, width=300, placeholder_text="Email")
     email_entry.pack(pady=10)
+    
 
     def submit_email():
         email = email_entry.get()
