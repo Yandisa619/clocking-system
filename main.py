@@ -9,6 +9,7 @@ import sqlite3
 import numpy as np
 import time
 import os
+import subprocess
 
 # Database setup
 conn = sqlite3.connect('clocking_system.db')
@@ -182,9 +183,16 @@ class ClockingApp(ctk.CTk):
     
     # Logout Button
     def logout(self):
-        self.current_user = None
-        self.show_login_screen()
+        if hasattr(self, 'after_id') and self.after_id is not None:
+            self.after_cancel(self.after_id)
+        
         messagebox.showinfo("Logout", "You have been logged out successfully.")
+        
+        self.current_user = None
+        self.destroy()
+
+        registration_screen_path = r"C:\Users\Yandisa\OneDrive - Cape IT Initiative\Documents\GitHub\clocking-system\Register.py"
+        subprocess.Popen(["python", registration_screen_path])
 
     def delete_user(self, user):
         if messagebox.askyesno("Confirm Delete", "Are you sure you want to delete this user?"):
@@ -296,7 +304,7 @@ class ClockingApp(ctk.CTk):
 
            face_encodings = face_recognition.face_encodings(rgb_frame, face_locations)
  
-           for face_encoding in face_encodings:  # Correct indentation here
+           for face_encoding in face_encodings:  
                matches = face_recognition.compare_faces(self.known_face_encodings, face_encoding, tolerance=0.55)
                if True in matches:
                 matched_index = matches.index(True)
