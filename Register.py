@@ -5,32 +5,34 @@ from tkinter import messagebox
 import re
 import hashlib
 from PIL import Image
-import random 
+import random
 import string
-from tkinter import simpledialog
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
+import face_recognition
+import cv2
+import numpy as np
 
 
 # Initialize database
 conn = sqlite3.connect('clocking_system.db')
 cursor = conn.cursor()
 cursor.execute('''
-    CREATE TABLE IF NOT EXISTS users_info (
+    CREATE TABLE IF NOT EXISTS admin_info (
         username TEXT PRIMARY KEY,
         name TEXT NOT NULL,
         email TEXT UNIQUE NOT NULL,
         password TEXT NOT NULL,
         company TEXT NOT NULL,
-        image BLOB  
+        image BLOB,
+        face_encoding BLOB
     )
 ''')
 conn.commit()
 conn.close()
 
 def send_password_recovery(email):
-   
     sender_email = "ntombekhaya.mkaba@capaciti.org.za"
     sender_password = "Ntosh98*#"
     message = MIMEMultipart()
@@ -49,25 +51,18 @@ def send_password_recovery(email):
         print("Password recovery email sent!")
     except Exception as e:
         print(f"Error sending email: {e}")
-#Hashing password storage
+
 def hash_password(password):
     return hashlib.sha256(password.encode()).hexdigest()
 
-# def upload_image():
-#     file_path = tkinter.filedialog.askopenfilename(filetypes=[("Image Files", "*.jpg;*.jpeg;*.png;*.gif")])
-#     if file_path:
-#         # Set the file path in the label (or another widget)
-        
-#         return file_path
-#     else:
-#         messagebox.showerror("Error", "No image selected.")
-#         return None
-    
-
 def generate_temp_password(length=8):
     characters = string.ascii_letters + string.digits
+    return ''.join(random.choice(characters) for _ in range(length))
 
-# Functions to switch between frames
+def is_valid_email(email):
+    email_regex = r"^[a-zA-Z0-9_.+-]+@[a-zA0-9.-]+\.[a-zA-Z]{2,}$"
+    return re.match(email_regex, email) is not None
+
 def switch_to_register():
     login_frame.pack_forget()
     entry_username.delete(0, 'end')
@@ -78,18 +73,11 @@ def switch_to_register():
     entry_company.delete(0, 'end')
     register_frame.pack(pady=20)
 
-
-# Function to switch to the login frame
 def switch_to_login():
-    register_frame.pack_forget() 
+    register_frame.pack_forget()
     login_frame.pack(pady=20, padx=20, expand=True)
 
-def is_valid_email(email):
-    email_regex = r"^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+$"
-    return re.match(email_regex, email) is not None
-
-# Function to handle registration
-
+# Function to handle registration with face recognition
 def register_user():
     username = entry_username.get()
     name = entry_name.get()
@@ -98,94 +86,85 @@ def register_user():
     email = entry_email.get()
     company = entry_company.get()
 
-    # Validate required fields
     if not (username and name and password and confirm_password and email and company):
         messagebox.showerror("Error", "All fields are required")
         return
-    
-    # Check if passwords match
+
     if password != confirm_password:
         messagebox.showerror("Error", "Passwords do not match")
         return
     
-    # Validate email format
-    if not re.match(r"^[\w\.-]+@[\w\.-]+\.\w+$", email):
+    if not is_valid_email(email):
         messagebox.showerror("Error", "Invalid email format")
         return
     
-    
-    # Connect to the database
     conn = sqlite3.connect('clocking_system.db')
     cursor = conn.cursor()
     
-    # Check for existing username or email
     cursor.execute('SELECT * FROM users_info WHERE username = ? OR email = ?', (username, email))
     existing_user = cursor.fetchone()
 
     if existing_user:
-            temp_password = generate_temp_password()
-            hashed_temp_password = hash_password(temp_password)
-            messagebox.showinfo("Password Reset", f"Your temporary password is: {temp_password}\nPlease change it after logging in.")
-    else:
-        messagebox.showerror("Error", "Email not found. Please check and try again.")
-    if existing_user:
-        if existing_user[0] == username: 
-            messagebox.showerror("Error", "Username already exists")
-        elif existing_user[3] == email:  
-            messagebox.showerror("Error", "Email already registered")
+        messagebox.showerror("Error", "Username or Email already exists")
         conn.close()
         return
     
+
+
     
+    # Capture face for registration
+    messagebox.showinfo("Capture Face", "Please look at the camera to capture your face.")
+    video_capture = cv2.VideoCapture(0)
+    ret, frame = video_capture.read()
+    if not ret:
+        messagebox.showerror("Error", "Could not access the camera.")
+        return
+
+    rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+    face_locations = face_recognition.face_locations(rgb_frame)
+    face_encodings = face_recognition.face_encodings(rgb_frame, face_locations)
     
-    # Insert new user
+    if not face_encodings:
+        messagebox.showerror("Error", "No face detected. Please try again.")
+        return
+
+    face_encoding = face_encodings[0]  # Capture first face
+    face_encoding_blob = np.array(face_encoding).tobytes()
+
+    # Insert user into the database along with the face encoding
     try:
-        # Insert the new user
         hashed_password = hash_password(password)
-        cursor.execute('INSERT INTO users_info (username, name, password, email, company) VALUES (?, ?, ?, ?, ?)',
-                       (username, name, password, email, company))
+        cursor.execute('INSERT INTO users_info (username, name, password, email, company, face_encoding) VALUES (?, ?, ?, ?, ?, ?)',
+                       (username, name, hashed_password, email, company, face_encoding_blob))
         conn.commit()
         messagebox.showinfo("Success", "Registration Successful")
-        switch_to_login()  
+        switch_to_login()
     except sqlite3.IntegrityError:
         messagebox.showerror("Error", "Username or email already exists")
     finally:
         conn.close()
 
-
-# Function to handle login
 def login_user():
     username = login_username.get()
     password = login_password.get()
-    
+
     conn = sqlite3.connect('clocking_system.db')
     cursor = conn.cursor()
     
-    cursor.execute('SELECT * FROM users_info WHERE username = ? AND password = ?', (username, password))
-    result = cursor.fetchone()  
+    cursor.execute('SELECT * FROM users_info WHERE username = ?', (username,))
+    result = cursor.fetchone()
     
     if result:
-        messagebox.showinfo("Success", f"Welcome, {result[1]} from {result[3]}")
+        stored_password = result[3]
+        if stored_password == hash_password(password):  # Compare hashed passwords
+            messagebox.showinfo("Success", f"Welcome, {result[1]}")
+        else:
+            messagebox.showerror("Error", "Invalid password")
     else:
-        messagebox.showerror("Error", "Invalid username or password")
+        messagebox.showerror("Error", "Invalid username")
     
     conn.close()
 
-# Initialize CustomTkinter
-ctk.set_appearance_mode("dark")
-ctk.set_default_color_theme("blue")
-
-app = ctk.CTk()
-app.title("Registration and Login System")
-
-# Function to center the window
-def center_window(app, width, height):
-    screen_width = app.winfo_screenwidth()
-    screen_height = app.winfo_screenheight()
-    x = int((screen_width / 2) - (width / 2))
-    y = int((screen_height / 2) - (height / 2))
-    
-    app.geometry(f"{width}x{height}+{x}+{y}")
 
 def forgot_password(event=None):
     forgot_window = ctk.CTkToplevel(app)
@@ -197,7 +176,7 @@ def forgot_password(event=None):
 
     email_entry = ctk.CTkEntry(forgot_window, width=300, placeholder_text="Email")
     email_entry.pack(pady=10)
-    
+
 
     def submit_email():
         email = email_entry.get()
@@ -210,22 +189,50 @@ def forgot_password(event=None):
     submit_button = ctk.CTkButton(forgot_window, text="Submit", command=submit_email)
     submit_button.pack(pady=10)
 
-# Set window size and center it
-window_width = 450
-window_height = 500
-center_window(app, window_width, window_height)
 
-screen_width = app.winfo_screenwidth()
-screen_height = app.winfo_screenheight()
+    #function for face 
 
-bg_image = ctk.CTkImage(
-    light_image=Image.open("pexels-googledeepmind-18069161.jpg"),
-    dark_image=Image.open("pexels-googledeepmind-18069161.jpg"),
-    size=(screen_width, screen_height) 
-)
+def authenticate_with_face():
+    video_capture = cv2.VideoCapture(0)
+    ret, frame = video_capture.read()
+    if not ret:
+        messagebox.showerror("Error", "Could not access the camera.")
+        return
 
-bg_label = ctk.CTkLabel(app, image=bg_image, text="")
-bg_label.place(x=0, y=0, relwidth=1, relheight=1)
+    rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+    face_locations = face_recognition.face_locations(rgb_frame)
+    face_encodings = face_recognition.face_encodings(rgb_frame, face_locations)
+    
+    if not face_encodings:
+        messagebox.showerror("Error", "No face detected. Please try again.")
+        return
+
+    # Compare face with stored faces in database
+    conn = sqlite3.connect('clocking_system.db')
+    cursor = conn.cursor()
+    cursor.execute('SELECT username, face_encoding FROM users_info')
+    users = cursor.fetchall()
+
+    for username, stored_face_encoding in users:
+        stored_face_encoding = np.frombuffer(stored_face_encoding, dtype=np.float64)
+        matches = face_recognition.compare_faces([stored_face_encoding], face_encodings[0])
+
+        if True in matches:
+            messagebox.showinfo("Success", f"Welcome, {username}")
+            conn.close()
+            return
+    
+    messagebox.showerror("Error", "Face not recognized.")
+    conn.close()
+
+# Initialize CustomTkinter
+ctk.set_appearance_mode("dark")
+ctk.set_default_color_theme("blue")
+
+app = ctk.CTk()
+app.title("Registration and Login System")
+
+
 
 
 # Common Frame Settings
@@ -234,7 +241,7 @@ frame_height = 450
 
 # Registration Frame
 register_frame = ctk.CTkFrame(app, width=frame_width, height=frame_height)
-register_frame.pack(pady=20, padx=20, expand=True)  
+register_frame.pack(pady=20, padx=20, expand=True)
 
 ctk.CTkLabel(register_frame, text="Register", font=("Arial", 24)).pack(pady=15)
 
@@ -256,17 +263,14 @@ entry_confirm_password.pack(pady=10, padx=20)
 entry_company = ctk.CTkEntry(register_frame, placeholder_text="Company", width=300)
 entry_company.pack(pady=10, padx=20)
 
-# upload_button = ctk.CTkButton(register_frame, text="Upload Image", command=lambda: upload_image())
-# upload_button.pack(pady=10, padx=20)
+# Capture Face Button
+capture_face_button = ctk.CTkButton(register_frame, text="Capture Face", width=200, command=register_user)
+capture_face_button.pack(pady=15, padx=20)
 
-# image_label = ctk.CTkLabel(register_frame, text="No image selected")
-# image_label.pack(pady=5)
-
-register_button = ctk.CTkButton(register_frame, text="Register", width=200, command= register_user)
+register_button = ctk.CTkButton(register_frame, text="Register", width=200, command=register_user)
 register_button.pack(pady=15, padx=20)
 
-
-switch_to_login_btn = ctk.CTkButton(register_frame, text="Already have an account?", width=200, command= switch_to_login)
+switch_to_login_btn = ctk.CTkButton(register_frame, text="Already have an account?", width=200, command=switch_to_login)
 switch_to_login_btn.pack(pady=5)
 
 # Login Frame
@@ -283,8 +287,10 @@ login_password.pack(pady=10, padx=20)
 login_button = ctk.CTkButton(login_frame, text="Login", width=200, command=login_user)
 login_button.pack(pady=15, padx=20)
 
-# switch_to_register_btn = ctk.CTkButton(login_frame, text="Don't have an account? Register", width=200, command= switch_to_register)
-# switch_to_register_btn.pack(pady=5)
+# Face Recognition Login Button
+face_recognition_button = ctk.CTkButton(login_frame, text="Login with Face Recognition", width=200, command=authenticate_with_face)
+face_recognition_button.pack(pady=10)
+
 
 account_label = ctk.CTkLabel(
     login_frame,
@@ -295,7 +301,7 @@ account_label = ctk.CTkLabel(
 )
 
 
-account_label.bind("<Button-1>", lambda e:forgot_password())
+account_label.bind("<Button-1>", lambda e:switch_to_register())
 account_label.pack(pady=5)
 
 
@@ -310,8 +316,6 @@ forgot_password_label = ctk.CTkLabel(
 # Bind click event to the label
 forgot_password_label.bind("<Button-1>", lambda e: forgot_password())
 forgot_password_label.pack(pady=5)
-
-
 
 # Start with the registration frame visible
 register_frame.pack(pady=20, padx=20, expand=True)
