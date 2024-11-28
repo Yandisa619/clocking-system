@@ -1,26 +1,32 @@
 import customtkinter as ctk
-from tkinter import messagebox
+from tkinter import messagebox, StringVar, OptionMenu
 import cv2
 import face_recognition
 import sqlite3
 import numpy as np
 from datetime import datetime
-import time
+import os
 
 # Database setup
 conn = sqlite3.connect('clocking_system.db')
 cursor = conn.cursor()
+cursor.execute("PRAGMA foreign_keys = ON;")
 cursor.execute('''CREATE TABLE IF NOT EXISTS clock_logs (
-                      id INTEGER PRIMARY KEY,
-                      user_id INTEGER,
-                      clock_in_time TEXT,
-                      clock_out_time TEXT
+                      id INTEGER PRIMARY KEY AUTOINCREMENT,
+                      user_id INTEGER NOT NULL,
+                      clock_in_time TEXT NOT NULL,
+                      clock_out_time TEXT,
+                      FOREIGN KEY (user_id) REFERENCES users(user_id)
+                          ON DELETE CASCADE ON UPDATE CASCADE
                  )''')
 
 cursor.execute('''CREATE TABLE IF NOT EXISTS users (
-                      user_id INTEGER PRIMARY KEY,
-                      name TEXT,
-                      face_encoding BLOB
+                      user_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                      name TEXT NOT NULL,
+                      face_encoding BLOB NOT NULL,
+                      emp_number TEXT,
+                      gender TEXT,
+                      occupation TEXT
                  )''')
 
 cursor.execute("PRAGMA table_info(clock_logs)")
@@ -29,21 +35,36 @@ if "clock_out_time" not in columns:
     cursor.execute("ALTER TABLE clock_logs ADD COLUMN clock_out_time TEXT")
     conn.commit()
 
+cursor.execute("PRAGMA table_info(users)")
+columns = [row[1] for row in cursor.fetchall()]
+
+if "emp_number" not in columns:
+    cursor.execute("ALTER TABLE users ADD COLUMN emp_number TEXT")
+if "gender" not in columns:
+    cursor.execute("ALTER TABLE users ADD COLUMN gender TEXT")
+if "occupation" not in columns:
+    cursor.execute("ALTER TABLE users ADD COLUMN occupation TEXT")
+
+    conn.commit()
+
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_user_id ON clock_logs(user_id)')
+
+
 # Initialize CustomTkinter
 ctk.set_appearance_mode("dark")
 ctk.set_default_color_theme("blue")
 
 
 class ClockingApp(ctk.CTk):
-    def __init__(self):
+    def __init__(self, conn):
         super().__init__()
         self.title("Advanced Clocking System")
         self.geometry("900x600")
         self.configure(padx=20, pady=20)
 
         # Known faces and IDs
+        self.conn = conn
         self.known_face_encodings = []
-        self.known_face_ids = []
         self.load_known_faces()
 
         # Navigation frame
@@ -108,6 +129,8 @@ class ClockingApp(ctk.CTk):
         name_entry.insert(0, user[1])
         name_entry.pack(pady=10)
 
+
+
         def save_changes():
             new_name = name_entry.get()
             if new_name.strip():
@@ -129,75 +152,135 @@ class ClockingApp(ctk.CTk):
 
     def show_registration_screen(self):
         self.clear_content_frame()
-        ctk.CTkLabel(self.content_frame, text="Register User", font=("Poppins", 24, "bold")).pack(pady=20)
-        name_entry = ctk.CTkEntry(self.content_frame, placeholder_text="Enter Name", width=400)
-        name_entry.pack(pady=10)
+       
+       # Name Entry
+        ctk.CTkLabel(self.content_frame, text="Register User", font=("Poppins", 14, "bold")).pack(pady= (10, 20))
+        name_entry = ctk.CTkEntry(self.content_frame, placeholder_text="Enter Name", width=200)
+        name_entry.pack(pady= (0, 20))
+
+        # Employee Number Entry 
+        ctk.CTkLabel(self.content_frame, text="Employee Number", font=("Poppins", 14, "bold")).pack(pady= (10, 20))
+        emp_number_entry = ctk.CTkEntry(self.content_frame, placeholder_text="Enter Employee Number", width=200)
+        emp_number_entry.pack(pady= (0, 20))
+
+        # Gender
+        ctk.CTkLabel(self.content_frame, text = "Gender", font = ("Poppins", 14, "bold")).pack(pady = (10, 20))
+        gender_var = StringVar(value = "Select Gender")
+        gender_menu = ctk.CTkOptionMenu(self.content_frame, values=["Male", "Female", "Other"], variable=gender_var, width = 200)
+        gender_menu.pack(pady = (0, 20))
+
+        # Occupation Dropdown
+        ctk.CTkLabel(self.content_frame, text = "Occupation", font = ("Poppins", 14, "bold")).pack(pady = (10,20))
+        occupation_var = StringVar(value = "Select Occupation")
+        occupation_menu = ctk.CTkOptionMenu(self.content_frame, values=["Software Candidate", "Networks Candidate", "Other"], variable=occupation_var, width = 200)
+        occupation_menu.pack(pady = (0, 20))
+        
+        # User Input validation
+        def validate_registration_inputs(name, emp_number, gender, occupation):
+            if not name or not name.replace(" ","").isalpha():
+               messagebox.showerror("Error", "Invalid name. Please enter a valid name.")
+               return False 
+        
+            if not emp_number or not emp_number.isalnum():
+               messagebox.showerror("Error", "Invalid employee number. It must be alphanumeric.")
+               return False
+
+            if gender not in ["Male", "Female", "Other"]:
+               messagebox.showerror("Error", "Please select a valid gender.")
+               return False
+
+            if occupation not in ["Software Candidate", "Networks Candidate", "Other"]:
+               messagebox.showerror("Error", "Please select a valid occupation.")
+               return False
+            return True
 
         def capture_and_register():
             name = name_entry.get().strip()
-            if not name:
-                messagebox.showerror("Error", "Name cannot be empty.")
-                return
+            emp_number = emp_number_entry.get().strip()
+            gender = gender_var.get()
+            occupation = occupation_var.get()
+            
+            if not validate_registration_inputs(name, emp_number, gender, occupation):
+                return 
+              
             try:
-                self.register_user(name)
+                conn = sqlite3.connect("clocking_system.db")
+                self.register_user(name, emp_number, gender, occupation, conn)
+                messagebox.showinfo("Success", "User registered successfully!")
             except Exception as e:
                 messagebox.showerror("Error", f"Failed to register user: {str(e)}")
+            finally:
+                conn.close()
 
         ctk.CTkButton(self.content_frame, text="Register", command=capture_and_register, width=200).pack(pady=20)
 
-    def start_clock_in(self):
-        self.clear_content_frame()
+        def start_clock_in(self):
+         self.clear_content_frame()
         ctk.CTkLabel(self.content_frame, text="Clock In", font=("Poppins", 24, "bold")).pack(pady=20)
         ctk.CTkLabel(self.content_frame, text="Looking for faces...", font=("Poppins", 16)).pack(pady=10)
         self.clock_in()
 
-    def clock_in(self):
-        video_capture = cv2.VideoCapture(0)
-        if not video_capture.isOpened():
+        def clock_in(self):
+         video_capture = cv2.VideoCapture(0)
+         if not video_capture.isOpened():
             messagebox.showerror("Camera Error", "Unable to access camera. Please check your device.")
             return
 
-        messagebox.showinfo("Clock In", "Looking for faces. Please face the camera.")
-        face_recognized = False
+         messagebox.showinfo("Clock In", "Looking for faces. Please face the camera.")
+         face_recognized = False
 
-        known_face_encodings = self.known_face_encodings
-
-        while True:
-            ret, frame = video_capture.read()
-            if not ret:
+         while True:
+             ret, frame = video_capture.read()
+             if not ret:
                 messagebox.showerror("Camera Error", "Failed to read from the camera. Please try again.")
                 break
-
-            rgb_frame = frame[:, :, ::-1]
-            face_locations = face_recognition.face_locations(rgb_frame)
-
-            if face_locations:
-                face_encodings = face_recognition.face_encodings(rgb_frame, face_locations)
-
-                for face_encoding in face_encodings:
-                    matches = face_recognition.compare_faces(known_face_encodings, face_encoding)
-
-                    if True in matches:
-                        face_recognized = True
-                        break
-
-                    for (top, right, bottom, left) in face_locations:
-                        cv2.rectangle(frame, (left, top), (right, bottom), (0,255,0), 2)
-                    
-                        if face_recognized or (cv2.waitKey(1) & 0xFF == ord ('q')):
-                            break
-
             
+             rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+             face_locations = face_recognition.face_locations(rgb_frame, model = "hog")
+            
+             if not face_locations:
+               print("No faces detected.")
+               continue
+            
+             face_encodings = face_recognition.face_encodings(rgb_frame, face_locations)
 
-        video_capture.release()
-        cv2.destroyAllWindows()
+         for face_encoding in face_encodings:
+            matches = face_recognition.compare_faces(self.known_face_encodings, face_encoding)
+            if True in matches:
+                matched_index = matches.index(True)
+                user_id = self.known_face_ids[matched_index]
+                messagebox.showinfo("Clock In Success", f"User ID {user_id} recognized. Clock-in recorded!")
+                face_recognized = True
+                break
+                
+            if face_recognized or (cv2.waitKey(1) & 0xFF == ord('q')):
+                break
 
-        if face_recognized:
-            messagebox.showinfo("Clock In Success", "Face recognized. Clock-in recorded!")
-        else:
+         video_capture.release()
+         cv2.destroyAllWindows()
+
+        
+         if not face_recognized:
             messagebox.showwarning("Clock In Failed", "No recognized face. Please try again.")
+    
 
-    def register_user(self, name):
+    def load_known_faces(self):
+        self.known_face_encodings = []
+        cursor = self.conn.cursor()
+        cursor.execute("SELECT face_encoding FROM users")
+        encodings = cursor.fetchall()
+
+        for encoding in encodings:
+         
+         if encoding[0] is not None:
+          self.known_face_encodings.append(np.frombuffer(encoding[0], np.uint8))  
+
+    #Face Registration Validation 
+    def is_face_duplicate(self, face_encoding):
+       matches = face_recognition.compare_faces(self.known_face_encodings, face_encoding, tolerance=0.6)
+       return True in matches
+    
+    def register_user(self, name, emp_number, gender, occupation, conn):
         video_capture = cv2.VideoCapture(0)
         if not video_capture.isOpened():
             messagebox.showerror("Camera Error", "Unable to access the camera. Please check your device.")
@@ -205,19 +288,35 @@ class ClockingApp(ctk.CTk):
 
         messagebox.showinfo("Camera Active", "Look at the camera. Capturing your face...")
         face_captured = False
-        max_attempts = 10
-        capture_time = 20
-        attempt_counter = 0
-        start_time = time.time()
 
-        while attempt_counter < max_attempts:
+        cursor = conn.cursor()
+        cursor.execute("SELECT user_id FROM users WHERE name = ?", (name,))
+        user = cursor.fetchone()
+        
+        if user:
+            user_id = user[0]
+            cursor.execute("UPDATE users SET emp_number = ?, gender = ?, occupation = ? WHERE user_id = ?",
+                           (emp_number, gender, occupation, user_id))
+
+        else: 
+
+            cursor.execute(
+                "INSERT INTO users (name, emp_number, gender, occupation) VALUES (?, ?, ?, ?)",
+                 (name, emp_number, gender, occupation)
+            )
+
+            conn.commit()
+            user_id = cursor.lastrowid
+        
+
+        for _ in range(5):
             ret, frame = video_capture.read()
             if not ret:
                 messagebox.showerror("Camera Error", f"Attempt {attempt_counter + 1}: Failed to read from the camera. Please try again.")
                 break
-
+            
             rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-            face_locations = face_recognition.face_locations(rgb_frame)
+            face_locations = face_recognition.face_locations(rgb_frame, model = "hog")
 
             if face_locations:
 
@@ -229,7 +328,13 @@ class ClockingApp(ctk.CTk):
                 if len(face_encodings) > 0:
                     face_encoding = face_encodings[0]
                 try:
-                    cursor.execute("INSERT INTO users (name, face_encoding) VALUES (?, ?)", (name, face_encoding.tobytes()))
+                    face_encoding = face_recognition.face_encodings(rgb_frame, face_locations)[0]
+                    if self.is_face_duplicate(face_encoding):
+                        messagebox.showerror("Error", "This face is already registered.")
+                        break
+
+                    encoded_face = face_encoding.tobytes()
+                    cursor.execute("UPDATE users SET face_encoding = ? WHERE user_id = ?", (encoded_face, user_id))
                     conn.commit()
                     self.known_face_encodings.append(face_encoding)
                     self.load_known_faces()
@@ -238,6 +343,7 @@ class ClockingApp(ctk.CTk):
                 except Exception as e:
                     messagebox.showerror("Database Error", f"Failed to register face encoding: {str(e)}")
                     break
+       
 
             cv2.imshow("Camera", frame)
 
@@ -264,15 +370,7 @@ class ClockingApp(ctk.CTk):
             messagebox.showinfo("Success", "Face registered successfully!")
         else:
             messagebox.showerror("Face Not Detected", "No face detected. Please try again.")
-
-    def load_known_faces(self):
-        self.known_face_ids = []
-        self.known_face_encodings = []
-        cursor.execute("SELECT user_id, face_encoding FROM users")
-        for user_id, face_encoding in cursor.fetchall():
-            self.known_face_ids.append(user_id)
-            self.known_face_encodings.append(np.frombuffer(face_encoding, dtype=np.float64))
-
+  
     def clear_content_frame(self):
         for widget in self.content_frame.winfo_children():
             widget.destroy()
@@ -294,8 +392,8 @@ class ClockingApp(ctk.CTk):
                 ctk.CTkLabel(logs_frame, text=log_text, font=("Poppins", 14)).pack(anchor="w", padx=10)
 
         ctk.CTkButton(self.content_frame, text="Refresh Logs", command=self.show_logs, width=200).pack(pady=20)
-
+    
 
 if __name__ == "__main__":
-    app = ClockingApp()
+    app = ClockingApp(conn)
     app.mainloop()
