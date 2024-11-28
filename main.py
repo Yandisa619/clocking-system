@@ -4,6 +4,7 @@ import cv2
 import face_recognition
 import sqlite3
 import numpy as np
+import time
 from datetime import datetime
 import os
 
@@ -214,70 +215,79 @@ class ClockingApp(ctk.CTk):
 
         ctk.CTkButton(self.content_frame, text="Register", command=capture_and_register, width=200).pack(pady=20)
 
-        def start_clock_in(self):
+    def start_clock_in(self):
          self.clear_content_frame()
-        ctk.CTkLabel(self.content_frame, text="Clock In", font=("Poppins", 24, "bold")).pack(pady=20)
-        ctk.CTkLabel(self.content_frame, text="Looking for faces...", font=("Poppins", 16)).pack(pady=10)
-        self.clock_in()
+         ctk.CTkLabel(self.content_frame, text="Clock In", font=("Poppins", 24, "bold")).pack(pady=20)
+         ctk.CTkLabel(self.content_frame, text="Looking for faces...", font=("Poppins", 16)).pack(pady=10)
+         self.clock_in()
 
-        def clock_in(self):
-         video_capture = cv2.VideoCapture(0)
-         if not video_capture.isOpened():
-            messagebox.showerror("Camera Error", "Unable to access camera. Please check your device.")
-            return
+    def clock_in(self):
+        video_capture = cv2.VideoCapture(0)
+        if not video_capture.isOpened():
+           messagebox.showerror("Camera Error", "Unable to access camera. Please check your device.")
+           return
 
-         messagebox.showinfo("Clock In", "Looking for faces. Please face the camera.")
-         face_recognized = False
+        messagebox.showinfo("Clock In", "Looking for faces. Please face the camera.")
+        face_recognized = False
 
-         while True:
-             ret, frame = video_capture.read()
-             if not ret:
-                messagebox.showerror("Camera Error", "Failed to read from the camera. Please try again.")
-                break
-            
-             rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-             face_locations = face_recognition.face_locations(rgb_frame, model = "hog")
-            
-             if not face_locations:
-               print("No faces detected.")
-               continue
-            
-             face_encodings = face_recognition.face_encodings(rgb_frame, face_locations)
+        while True:
+           ret, frame = video_capture.read()
+           if not ret:
+            messagebox.showerror("Camera Error", "Failed to read from the camera. Please try again.")
+            break
 
-         for face_encoding in face_encodings:
-            matches = face_recognition.compare_faces(self.known_face_encodings, face_encoding)
-            if True in matches:
+           rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+           face_locations = face_recognition.face_locations(rgb_frame, model="hog")
+
+           if not face_locations:
+              messagebox.showerror("Camera Error", "No faces detected.")
+              continue
+
+           face_encodings = face_recognition.face_encodings(rgb_frame, face_locations)
+ 
+           for face_encoding in face_encodings:  # Correct indentation here
+               matches = face_recognition.compare_faces(self.known_face_encodings, face_encoding, tolerance=0.55)
+               if True in matches:
                 matched_index = matches.index(True)
                 user_id = self.known_face_ids[matched_index]
                 messagebox.showinfo("Clock In Success", f"User ID {user_id} recognized. Clock-in recorded!")
                 face_recognized = True
                 break
-                
-            if face_recognized or (cv2.waitKey(1) & 0xFF == ord('q')):
-                break
 
-         video_capture.release()
-         cv2.destroyAllWindows()
+           if face_recognized or (cv2.waitKey(1) & 0xFF == ord('q')):
+            break
+ 
+           video_capture.release()
+           cv2.destroyAllWindows()
 
-        
-         if not face_recognized:
-            messagebox.showwarning("Clock In Failed", "No recognized face. Please try again.")
+        if not face_recognized:
+         messagebox.showwarning("Clock In Failed", "No recognized face. Please try again.")
+ 
     
 
     def load_known_faces(self):
         self.known_face_encodings = []
+        self.known_face_ids = []
+        
         cursor = self.conn.cursor()
-        cursor.execute("SELECT face_encoding FROM users")
-        encodings = cursor.fetchall()
+        cursor.execute("SELECT user_id, face_encoding FROM users")
+        results = cursor.fetchall()
 
-        for encoding in encodings:
-         
-         if encoding[0] is not None:
-          self.known_face_encodings.append(np.frombuffer(encoding[0], np.uint8))  
+        for row in results:
+            user_id, encoding_blob = row
+            if encoding_blob is not None:
+                try:
+                  encoding = np.frombuffer(row[1], dtype=np.float64) 
+                  if encoding.shape == (128,):
+                    self.known_face_encodings.append(encoding)
+                    self.known_face_ids.append(user_id) 
+                except Exception as e:
+                    messagebox.showerror(f"Error loading face encoding for user_id {row[0]}: {e}")  
 
+        
     #Face Registration Validation 
     def is_face_duplicate(self, face_encoding):
-       matches = face_recognition.compare_faces(self.known_face_encodings, face_encoding, tolerance=0.6)
+       matches = face_recognition.compare_faces(self.known_face_encodings, face_encoding, tolerance=0.55)
        return True in matches
     
     def register_user(self, name, emp_number, gender, occupation, conn):
@@ -307,6 +317,12 @@ class ClockingApp(ctk.CTk):
 
             conn.commit()
             user_id = cursor.lastrowid
+
+        attempt_counter = 0
+        start_time = time.time()
+        capture_time = 10 
+        retry = False
+
         
 
         for _ in range(5):
@@ -357,9 +373,9 @@ class ClockingApp(ctk.CTk):
             elapsed_time = time.time() - start_time
             if elapsed_time >= capture_time:
                 retry = messagebox.askretrycancel("Timeout", "Face capture timed out. Please try again.")
-            if retry:
-                start_time = time.time()
-                attempt_counter = 0
+                if retry:
+                 start_time = time.time()
+                 attempt_counter = 0
             
             else:
                 break
