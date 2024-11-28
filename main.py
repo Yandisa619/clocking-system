@@ -1,11 +1,13 @@
 import customtkinter as ctk
-from tkinter import messagebox, StringVar, OptionMenu
+from tkinter import messagebox, StringVar, OptionMenu, filedialog
+from datetime import datetime
+from reportlab.lib.pagesizes import letter 
+from reportlab.pdfgen import canvas
 import cv2
 import face_recognition
 import sqlite3
 import numpy as np
 import time
-from datetime import datetime
 import os
 
 # Database setup
@@ -136,19 +138,19 @@ class ClockingApp(ctk.CTk):
         # Employee Number Entry
         ctk.CTkLabel(self.content_frame, text="Employee Number", font=("Poppins", 14, "bold")).pack(pady=(10, 20))
         emp_number_entry = ctk.CTkEntry(self.content_frame, placeholder_text="Enter Employee Number", width=200)
-        emp_number_entry.insert(0, user[0]) 
+        emp_number_entry.insert(0, user[3]) 
         emp_number_entry.pack(pady=(0, 20))
         emp_number_entry.configure(state="readonly")
 
         # Gender Dropdown
         ctk.CTkLabel(self.content_frame, text="Gender", font=("Poppins", 14, "bold")).pack(pady=(10, 20))
-        gender_var = StringVar(value=user[2])
+        gender_var = StringVar(value=user[4])
         gender_menu = ctk.CTkOptionMenu(self.content_frame, values=["Male", "Female", "Other"], variable=gender_var, width=200)
         gender_menu.pack(pady=(0, 20))
 
         # Occupational Dropdown
         ctk.CTkLabel(self.content_frame, text="Occupation", font=("Poppins", 14, "bold")).pack(pady=(10, 20))
-        occupation_var = StringVar(value=user[3])  # Pre-fill with the current occupation
+        occupation_var = StringVar(value=user[5])
         occupation_menu = ctk.CTkOptionMenu(self.content_frame, values=["Software Candidate", "Networks Candidate", "Other"], variable=occupation_var, width=200)
         occupation_menu.pack(pady=(0, 20))
 
@@ -316,35 +318,44 @@ class ClockingApp(ctk.CTk):
 
         messagebox.showinfo("Clock Out", "Looking for faces to clock out. Please face the camera.")
         face_recognized = False
+        retries = 0
 
         while True:
             ret, frame = video_capture.read()
             if not ret:
-               messagebox.showerror("Camera Error", "No faces detected.")
+               retries +=1
+               messagebox.showerror("Camera Error", "No faces detected, You have 3 attempts left.")
+               if retries >= 3:
+                  messagebox.showerror("Camera Error", "Unable to capture video after multiple attempts.")
+                  break
                continue
 
+            retries = 0
+            
+            
+
             rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            
             face_locations = face_recognition.face_locations(rgb_frame, model="hog")
 
             if not face_locations:
-                messagebox.showerror("Camera Error", "No faces detected.")
+                messagebox.showwarning("Camera Error", "No faces detected.")
                 continue
             
             face_encodings = face_recognition.face_encodings(rgb_frame, face_locations)
 
             for face_encoding in face_encodings:
-                matches = face_recognition.compare_faces(self.known_face_encodings, face_encoding, tolerance=0.55)
-                if True in matches:
+                 matches = face_recognition.compare_faces(self.known_face_encodings, face_encoding, tolerance=0.55)
+                 if True in matches:
                     matched_index = matches.index(True)
                     user_id = self.known_face_ids[matched_index]
                     messagebox.showinfo("Clock Out Success", f"User ID {user_id} recognized. Clock-out recorded!")
 
                     self.record_clock_out(user_id)
-
                     face_recognized = True
                     break
 
-                if face_recognized or (cv2.waitKey(1) & 0xFF == ord('q')):
+                 if face_recognized or (cv2.waitKey(1) & 0xFF == ord('q')):
                     break
 
             video_capture.release()
@@ -503,6 +514,38 @@ class ClockingApp(ctk.CTk):
     def clear_content_frame(self):
         for widget in self.content_frame.winfo_children():
             widget.destroy()
+    
+    # Function to export logs to PDF's
+    def export_logs_to_pdf(self):
+        file_path = filedialog.asksaveasfilename(defaultextension = ".pdf", filetypes = [("PDF files", "*.pdf")])
+        if not file_path:
+            return 
+        
+        pdf = canvas.Canvas(file_path, pagesize = letter)
+        pdf.setFont("Helvetica", 12)
+
+        cursor.execute("SELECT * FROM clock_logs")
+        logs = cursor.fetchall()
+
+        if not logs:
+            pdf.drawString(100, 750, "No logs found." )
+        else:
+            pdf.drawString(100, 750, "Clocking Logs:")
+            y_position = 730
+            for log in logs:
+                log_text = f"User ID: {log[1]}, Clock-In: {log[2]}, Clock-Out: {log[3]}"
+                pdf.drawString(100, y_position, log_text)
+                y_position -=20
+
+                if y_position < 50:
+                    pdf.showPage()
+                    pdf.setFont("Helvetica", 12)
+                    y_position = 750
+            pdf.save()
+            messagebox.showinfo("Success", "Logs exported successfully as PDF!")
+
+
+        
 
     def show_logs(self):
         self.clear_content_frame()
@@ -519,7 +562,8 @@ class ClockingApp(ctk.CTk):
             for log in logs:
                 log_text = f"User ID: {log[1]}, Clock-In: {log[2]}, Clock-Out: {log[3]}"
                 ctk.CTkLabel(logs_frame, text=log_text, font=("Poppins", 14)).pack(anchor="w", padx=10)
-
+        
+        ctk.CTkButton(self.content_frame, text="Export Logs as PDF", command=self.export_logs_to_pdf, width=200).pack(pady=20)
         ctk.CTkButton(self.content_frame, text="Refresh Logs", command=self.show_logs, width=200).pack(pady=20)
     
 
