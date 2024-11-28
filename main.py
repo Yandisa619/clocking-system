@@ -93,6 +93,7 @@ class ClockingApp(ctk.CTk):
             ("Clock In", self.start_clock_in),
             ("Clock Out", self.clock_out),
             ("View Logs", self.show_logs),
+            ("Log Out", self.logout),
         ]
         for text, command in nav_buttons:
             ctk.CTkButton(self.nav_frame, text=text, command=command, height=40, width=180).pack(pady=10)
@@ -124,6 +125,8 @@ class ClockingApp(ctk.CTk):
                 ctk.CTkButton(user_frame, text="Delete", command=lambda u=user: self.delete_user(u)).pack(side="left", padx=5)
 
         ctk.CTkButton(self.content_frame, text="Add User", command=self.show_registration_screen, width=200).pack(pady=20)
+        ctk.CTkButton(self.content_frame, text="Logout", command=self.logout, width=200, fg_color="red", hover_color="darkred").pack(pady=20)
+
 
     def edit_user(self, user):
         self.clear_content_frame()
@@ -153,11 +156,7 @@ class ClockingApp(ctk.CTk):
         occupation_var = StringVar(value=user[5])
         occupation_menu = ctk.CTkOptionMenu(self.content_frame, values=["Software Candidate", "Networks Candidate", "Other"], variable=occupation_var, width=200)
         occupation_menu.pack(pady=(0, 20))
-
         
-
-
-
         def save_changes():
             new_name = name_entry.get()
             new_gender = gender_var.get()
@@ -180,6 +179,12 @@ class ClockingApp(ctk.CTk):
             self.show_admin_panel()
 
         ctk.CTkButton(self.content_frame, text="Save Changes", command=save_changes, width=200).pack(pady=20)
+    
+    # Logout Button
+    def logout(self):
+        self.current_user = None
+        self.show_login_screen()
+        messagebox.showinfo("Logout", "You have been logged out successfully.")
 
     def delete_user(self, user):
         if messagebox.askyesno("Confirm Delete", "Are you sure you want to delete this user?"):
