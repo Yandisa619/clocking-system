@@ -89,6 +89,7 @@ class ClockingApp(ctk.CTk):
             ("Admin", self.show_admin_panel),
             ("Register User", self.show_registration_screen),
             ("Clock In", self.start_clock_in),
+            ("Clock Out", self.clock_out),
             ("View Logs", self.show_logs),
         ]
         for text, command in nav_buttons:
@@ -125,22 +126,56 @@ class ClockingApp(ctk.CTk):
     def edit_user(self, user):
         self.clear_content_frame()
         ctk.CTkLabel(self.content_frame, text="Edit User", font=("Poppins", 24, "bold")).pack(pady=20)
-
-        name_entry = ctk.CTkEntry(self.content_frame, placeholder_text="Enter New Name", width=400)
+        
+        # Name Entry
+        ctk.CTkLabel(self.content_frame, text="Enter New Name", font=("Poppins", 14, "bold")).pack(pady=(10, 20))
+        name_entry = ctk.CTkEntry(self.content_frame, placeholder_text="Enter New Name", width=200)
         name_entry.insert(0, user[1])
-        name_entry.pack(pady=10)
+        name_entry.pack(pady = (0, 20))
+
+        # Employee Number Entry
+        ctk.CTkLabel(self.content_frame, text="Employee Number", font=("Poppins", 14, "bold")).pack(pady=(10, 20))
+        emp_number_entry = ctk.CTkEntry(self.content_frame, placeholder_text="Enter Employee Number", width=200)
+        emp_number_entry.insert(0, user[0]) 
+        emp_number_entry.pack(pady=(0, 20))
+        emp_number_entry.configure(state="readonly")
+
+        # Gender Dropdown
+        ctk.CTkLabel(self.content_frame, text="Gender", font=("Poppins", 14, "bold")).pack(pady=(10, 20))
+        gender_var = StringVar(value=user[2])
+        gender_menu = ctk.CTkOptionMenu(self.content_frame, values=["Male", "Female", "Other"], variable=gender_var, width=200)
+        gender_menu.pack(pady=(0, 20))
+
+        # Occupational Dropdown
+        ctk.CTkLabel(self.content_frame, text="Occupation", font=("Poppins", 14, "bold")).pack(pady=(10, 20))
+        occupation_var = StringVar(value=user[3])  # Pre-fill with the current occupation
+        occupation_menu = ctk.CTkOptionMenu(self.content_frame, values=["Software Candidate", "Networks Candidate", "Other"], variable=occupation_var, width=200)
+        occupation_menu.pack(pady=(0, 20))
+
+        
 
 
 
         def save_changes():
             new_name = name_entry.get()
-            if new_name.strip():
-                cursor.execute("UPDATE users SET name = ? WHERE user_id = ?", (new_name, user[0]))
-                conn.commit()
-                messagebox.showinfo("Success", "User updated successfully!")
-                self.show_admin_panel()
-            else:
+            new_gender = gender_var.get()
+            new_occupation = occupation_var.get()
+            
+            if not new_name.strip():
                 messagebox.showerror("Error", "Name cannot be empty.")
+                return
+            
+            if new_gender == "Select Gender" or new_occupation == "Select Occupation":
+               messagebox.showerror("Error", "Please select both Gender and Occupation.")
+               return
+
+            cursor = self.conn.cursor()
+            cursor.execute('''
+                UPDATE users
+                SET name = ?, gender = ?, occupation = ?
+                WHERE user_id = ?''', (new_name, new_gender, new_occupation, user[0]))
+            self.conn.commit()
+            self.show_admin_panel()
 
         ctk.CTkButton(self.content_frame, text="Save Changes", command=save_changes, width=200).pack(pady=20)
 
@@ -214,6 +249,15 @@ class ClockingApp(ctk.CTk):
                 conn.close()
 
         ctk.CTkButton(self.content_frame, text="Register", command=capture_and_register, width=200).pack(pady=20)
+    
+    def record_clock_in(self, user_id):
+        cursor = self.conn.cursor()
+        clock_in_time = time.strftime('%Y-%m-%d %H:%M:%S')
+        cursor.execute('''INSERT INTO clock_logs (user_id, clock_in_time)
+                          VALUES (?,?)''', (user_id, clock_in_time))
+
+        self.conn.commit()
+        messagebox.showinfo("Clock In Success", f"User {user_id} clocked in at {clock_in_time}.")
 
     def start_clock_in(self):
          self.clear_content_frame()
@@ -251,6 +295,7 @@ class ClockingApp(ctk.CTk):
                 matched_index = matches.index(True)
                 user_id = self.known_face_ids[matched_index]
                 messagebox.showinfo("Clock In Success", f"User ID {user_id} recognized. Clock-in recorded!")
+                self.record_clock_in(user_id)
                 face_recognized = True
                 break
 
@@ -262,7 +307,75 @@ class ClockingApp(ctk.CTk):
 
         if not face_recognized:
          messagebox.showwarning("Clock In Failed", "No recognized face. Please try again.")
+
+    def clock_out(self):
+        video_capture = cv2.VideoCapture(0)
+        if not video_capture.isOpened():
+            messagebox.showerror("Camera Error", "Unable to access camera. Please check your device.")
+            return
+
+        messagebox.showinfo("Clock Out", "Looking for faces to clock out. Please face the camera.")
+        face_recognized = False
+
+        while True:
+            ret, frame = video_capture.read()
+            if not ret:
+               messagebox.showerror("Camera Error", "No faces detected.")
+               continue
+
+            rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            face_locations = face_recognition.face_locations(rgb_frame, model="hog")
+
+            if not face_locations:
+                messagebox.showerror("Camera Error", "No faces detected.")
+                continue
+            
+            face_encodings = face_recognition.face_encodings(rgb_frame, face_locations)
+
+            for face_encoding in face_encodings:
+                matches = face_recognition.compare_faces(self.known_face_encodings, face_encoding, tolerance=0.55)
+                if True in matches:
+                    matched_index = matches.index(True)
+                    user_id = self.known_face_ids[matched_index]
+                    messagebox.showinfo("Clock Out Success", f"User ID {user_id} recognized. Clock-out recorded!")
+
+                    self.record_clock_out(user_id)
+
+                    face_recognized = True
+                    break
+
+                if face_recognized or (cv2.waitKey(1) & 0xFF == ord('q')):
+                    break
+
+            video_capture.release()
+            cv2.destroyAllWindows()
+
+            if not face_recognized:
+                messagebox.showwarning("Clock Out Failed", "No recognized face. Please try again.")
+    
+    def record_clock_out(self, user_id):   
+        clock_out_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        
+        cursor = self.conn.cursor()
+        cursor.execute('''
+            SELECT id FROM clock_logs
+            WHERE user_id = ? AND clock_out_time IS NULL
+            ORDER BY clock_in_time DESC LIMIT 1''', (user_id,))
+
+        clock_in_record = cursor.fetchone()
+
+        if clock_in_record:
+
+            cursor.execute('''
+                UPDATE clock_logs
+                SET clock_out_time = ?
+                WHERE id = ?''', (clock_out_time, clock_in_record[0]))
+            self.conn.commit()
+            messagebox.showinfo("Clock Out Success", "Clock-out time recorded successfully!")
+        else:
+            messagebox.showwarning("Clock Out Failed", "No active clock-in record found for this user.")
  
+
     
 
     def load_known_faces(self):
