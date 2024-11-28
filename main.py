@@ -85,18 +85,18 @@ class ClockingApp(ctk.CTk):
         self.grid_rowconfigure(0, weight=1)
 
     def create_nav_buttons(self):
-        ctk.CTkLabel(self.nav_frame, text="Navigation", font=("Poppins", 18, "bold")).pack(pady=20)
+        ctk.CTkLabel(self.nav_frame, text="Navigation", font=("Poppins", 20, "bold"), text_color = "#1E90FF").pack(pady = (30, 20))
         nav_buttons = [
-            ("Home", self.show_home_screen),
-            ("Admin", self.show_admin_panel),
-            ("Register User", self.show_registration_screen),
-            ("Clock In", self.start_clock_in),
-            ("Clock Out", self.clock_out),
-            ("View Logs", self.show_logs),
-            ("Log Out", self.logout),
+            ("🏠 Home", self.show_home_screen),
+            ("🔧 Admin", self.show_admin_panel),
+            (" 📝 Register User", self.show_registration_screen),
+            (" 🕒 Clock In", self.start_clock_in),
+            (" ⏰ Clock Out", self.clock_out),
+            (" 📜 View Logs", self.show_logs),
+            (" 🚪 Log Out", self.logout),
         ]
         for text, command in nav_buttons:
-            ctk.CTkButton(self.nav_frame, text=text, command=command, height=40, width=180).pack(pady=10)
+            ctk.CTkButton(self.nav_frame, text=text, command=command, height=40, width=180, corner_radius = 10, fg_color = "#1E90FF", hover_color = "#4682B4", text_color = "white", font = ("Poppins", 14)).pack(pady = (10, 20))
 
     def show_home_screen(self):
         self.clear_content_frame()
