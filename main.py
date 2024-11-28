@@ -1,11 +1,13 @@
 import customtkinter as ctk
-from tkinter import messagebox, StringVar, OptionMenu
+from tkinter import messagebox, StringVar, OptionMenu, filedialog
+from datetime import datetime
+from reportlab.lib.pagesizes import letter 
+from reportlab.pdfgen import canvas
 import cv2
 import face_recognition
 import sqlite3
 import numpy as np
 import time
-from datetime import datetime
 import os
 
 # Database setup
@@ -83,16 +85,18 @@ class ClockingApp(ctk.CTk):
         self.grid_rowconfigure(0, weight=1)
 
     def create_nav_buttons(self):
-        ctk.CTkLabel(self.nav_frame, text="Navigation", font=("Poppins", 18, "bold")).pack(pady=20)
+        ctk.CTkLabel(self.nav_frame, text="Navigation", font=("Poppins", 20, "bold"), text_color = "#1E90FF").pack(pady = (30, 20))
         nav_buttons = [
-            ("Home", self.show_home_screen),
-            ("Admin", self.show_admin_panel),
-            ("Register User", self.show_registration_screen),
-            ("Clock In", self.start_clock_in),
-            ("View Logs", self.show_logs),
+            ("🏠 Home", self.show_home_screen),
+            ("🔧 Admin", self.show_admin_panel),
+            (" 📝 Register User", self.show_registration_screen),
+            (" 🕒 Clock In", self.start_clock_in),
+            (" ⏰ Clock Out", self.clock_out),
+            (" 📜 View Logs", self.show_logs),
+            (" 🚪 Log Out", self.logout),
         ]
         for text, command in nav_buttons:
-            ctk.CTkButton(self.nav_frame, text=text, command=command, height=40, width=180).pack(pady=10)
+            ctk.CTkButton(self.nav_frame, text=text, command=command, height=40, width=180, corner_radius = 10, fg_color = "#1E90FF", hover_color = "#4682B4", text_color = "white", font = ("Poppins", 14)).pack(pady = (10, 20))
 
     def show_home_screen(self):
         self.clear_content_frame()
@@ -121,28 +125,66 @@ class ClockingApp(ctk.CTk):
                 ctk.CTkButton(user_frame, text="Delete", command=lambda u=user: self.delete_user(u)).pack(side="left", padx=5)
 
         ctk.CTkButton(self.content_frame, text="Add User", command=self.show_registration_screen, width=200).pack(pady=20)
+        ctk.CTkButton(self.content_frame, text="Logout", command=self.logout, width=200).pack(pady=20)
+
 
     def edit_user(self, user):
         self.clear_content_frame()
         ctk.CTkLabel(self.content_frame, text="Edit User", font=("Poppins", 24, "bold")).pack(pady=20)
-
-        name_entry = ctk.CTkEntry(self.content_frame, placeholder_text="Enter New Name", width=400)
+        
+        # Name Entry
+        ctk.CTkLabel(self.content_frame, text="Enter New Name", font=("Poppins", 14, "bold")).pack(pady=(10, 20))
+        name_entry = ctk.CTkEntry(self.content_frame, placeholder_text="Enter New Name", width=200)
         name_entry.insert(0, user[1])
-        name_entry.pack(pady=10)
+        name_entry.pack(pady = (0, 20))
 
+        # Employee Number Entry
+        ctk.CTkLabel(self.content_frame, text="Employee Number", font=("Poppins", 14, "bold")).pack(pady=(10, 20))
+        emp_number_entry = ctk.CTkEntry(self.content_frame, placeholder_text="Enter Employee Number", width=200)
+        emp_number_entry.insert(0, user[3]) 
+        emp_number_entry.pack(pady=(0, 20))
+        emp_number_entry.configure(state="readonly")
 
+        # Gender Dropdown
+        ctk.CTkLabel(self.content_frame, text="Gender", font=("Poppins", 14, "bold")).pack(pady=(10, 20))
+        gender_var = StringVar(value=user[4])
+        gender_menu = ctk.CTkOptionMenu(self.content_frame, values=["Male", "Female", "Other"], variable=gender_var, width=200)
+        gender_menu.pack(pady=(0, 20))
 
+        # Occupational Dropdown
+        ctk.CTkLabel(self.content_frame, text="Occupation", font=("Poppins", 14, "bold")).pack(pady=(10, 20))
+        occupation_var = StringVar(value=user[5])
+        occupation_menu = ctk.CTkOptionMenu(self.content_frame, values=["Software Candidate", "Networks Candidate", "Other"], variable=occupation_var, width=200)
+        occupation_menu.pack(pady=(0, 20))
+        
         def save_changes():
             new_name = name_entry.get()
-            if new_name.strip():
-                cursor.execute("UPDATE users SET name = ? WHERE user_id = ?", (new_name, user[0]))
-                conn.commit()
-                messagebox.showinfo("Success", "User updated successfully!")
-                self.show_admin_panel()
-            else:
+            new_gender = gender_var.get()
+            new_occupation = occupation_var.get()
+            
+            if not new_name.strip():
                 messagebox.showerror("Error", "Name cannot be empty.")
+                return
+            
+            if new_gender == "Select Gender" or new_occupation == "Select Occupation":
+               messagebox.showerror("Error", "Please select both Gender and Occupation.")
+               return
+
+            cursor = self.conn.cursor()
+            cursor.execute('''
+                UPDATE users
+                SET name = ?, gender = ?, occupation = ?
+                WHERE user_id = ?''', (new_name, new_gender, new_occupation, user[0]))
+            self.conn.commit()
+            self.show_admin_panel()
 
         ctk.CTkButton(self.content_frame, text="Save Changes", command=save_changes, width=200).pack(pady=20)
+    
+    # Logout Button
+    def logout(self):
+        self.current_user = None
+        self.show_login_screen()
+        messagebox.showinfo("Logout", "You have been logged out successfully.")
 
     def delete_user(self, user):
         if messagebox.askyesno("Confirm Delete", "Are you sure you want to delete this user?"):
@@ -214,6 +256,15 @@ class ClockingApp(ctk.CTk):
                 conn.close()
 
         ctk.CTkButton(self.content_frame, text="Register", command=capture_and_register, width=200).pack(pady=20)
+    
+    def record_clock_in(self, user_id):
+        cursor = self.conn.cursor()
+        clock_in_time = time.strftime('%Y-%m-%d %H:%M:%S')
+        cursor.execute('''INSERT INTO clock_logs (user_id, clock_in_time)
+                          VALUES (?,?)''', (user_id, clock_in_time))
+
+        self.conn.commit()
+        messagebox.showinfo("Clock In Success", f"User {user_id} clocked in at {clock_in_time}.")
 
     def start_clock_in(self):
          self.clear_content_frame()
@@ -251,6 +302,7 @@ class ClockingApp(ctk.CTk):
                 matched_index = matches.index(True)
                 user_id = self.known_face_ids[matched_index]
                 messagebox.showinfo("Clock In Success", f"User ID {user_id} recognized. Clock-in recorded!")
+                self.record_clock_in(user_id)
                 face_recognized = True
                 break
 
@@ -262,7 +314,84 @@ class ClockingApp(ctk.CTk):
 
         if not face_recognized:
          messagebox.showwarning("Clock In Failed", "No recognized face. Please try again.")
+
+    def clock_out(self):
+        video_capture = cv2.VideoCapture(0)
+        if not video_capture.isOpened():
+            messagebox.showerror("Camera Error", "Unable to access camera. Please check your device.")
+            return
+
+        messagebox.showinfo("Clock Out", "Looking for faces to clock out. Please face the camera.")
+        face_recognized = False
+        retries = 0
+
+        while True:
+            ret, frame = video_capture.read()
+            if not ret:
+               retries +=1
+               messagebox.showerror("Camera Error", "No faces detected, You have 3 attempts left.")
+               if retries >= 3:
+                  messagebox.showerror("Camera Error", "Unable to capture video after multiple attempts.")
+                  break
+               continue
+
+            retries = 0
+            
+            
+
+            rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            
+            face_locations = face_recognition.face_locations(rgb_frame, model="hog")
+
+            if not face_locations:
+                messagebox.showwarning("Camera Error", "No faces detected.")
+                continue
+            
+            face_encodings = face_recognition.face_encodings(rgb_frame, face_locations)
+
+            for face_encoding in face_encodings:
+                 matches = face_recognition.compare_faces(self.known_face_encodings, face_encoding, tolerance=0.55)
+                 if True in matches:
+                    matched_index = matches.index(True)
+                    user_id = self.known_face_ids[matched_index]
+                    messagebox.showinfo("Clock Out Success", f"User ID {user_id} recognized. Clock-out recorded!")
+
+                    self.record_clock_out(user_id)
+                    face_recognized = True
+                    break
+
+                 if face_recognized or (cv2.waitKey(1) & 0xFF == ord('q')):
+                    break
+
+            video_capture.release()
+            cv2.destroyAllWindows()
+
+            if not face_recognized:
+                messagebox.showwarning("Clock Out Failed", "No recognized face. Please try again.")
+    
+    def record_clock_out(self, user_id):   
+        clock_out_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        
+        cursor = self.conn.cursor()
+        cursor.execute('''
+            SELECT id FROM clock_logs
+            WHERE user_id = ? AND clock_out_time IS NULL
+            ORDER BY clock_in_time DESC LIMIT 1''', (user_id,))
+
+        clock_in_record = cursor.fetchone()
+
+        if clock_in_record:
+
+            cursor.execute('''
+                UPDATE clock_logs
+                SET clock_out_time = ?
+                WHERE id = ?''', (clock_out_time, clock_in_record[0]))
+            self.conn.commit()
+            messagebox.showinfo("Clock Out Success", "Clock-out time recorded successfully!")
+        else:
+            messagebox.showwarning("Clock Out Failed", "No active clock-in record found for this user.")
  
+
     
 
     def load_known_faces(self):
@@ -390,6 +519,38 @@ class ClockingApp(ctk.CTk):
     def clear_content_frame(self):
         for widget in self.content_frame.winfo_children():
             widget.destroy()
+    
+    # Function to export logs to PDF's
+    def export_logs_to_pdf(self):
+        file_path = filedialog.asksaveasfilename(defaultextension = ".pdf", filetypes = [("PDF files", "*.pdf")])
+        if not file_path:
+            return 
+        
+        pdf = canvas.Canvas(file_path, pagesize = letter)
+        pdf.setFont("Helvetica", 12)
+
+        cursor.execute("SELECT * FROM clock_logs")
+        logs = cursor.fetchall()
+
+        if not logs:
+            pdf.drawString(100, 750, "No logs found." )
+        else:
+            pdf.drawString(100, 750, "Clocking Logs:")
+            y_position = 730
+            for log in logs:
+                log_text = f"User ID: {log[1]}, Clock-In: {log[2]}, Clock-Out: {log[3]}"
+                pdf.drawString(100, y_position, log_text)
+                y_position -=20
+
+                if y_position < 50:
+                    pdf.showPage()
+                    pdf.setFont("Helvetica", 12)
+                    y_position = 750
+            pdf.save()
+            messagebox.showinfo("Success", "Logs exported successfully as PDF!")
+
+
+        
 
     def show_logs(self):
         self.clear_content_frame()
@@ -406,7 +567,8 @@ class ClockingApp(ctk.CTk):
             for log in logs:
                 log_text = f"User ID: {log[1]}, Clock-In: {log[2]}, Clock-Out: {log[3]}"
                 ctk.CTkLabel(logs_frame, text=log_text, font=("Poppins", 14)).pack(anchor="w", padx=10)
-
+        
+        ctk.CTkButton(self.content_frame, text="Export Logs as PDF", command=self.export_logs_to_pdf, width=200).pack(pady=20)
         ctk.CTkButton(self.content_frame, text="Refresh Logs", command=self.show_logs, width=200).pack(pady=20)
     
 
