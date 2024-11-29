@@ -67,13 +67,15 @@ def is_valid_email(email):
 
 def switch_to_register():
     login_frame.pack_forget()
-    entry_username.delete(0, 'end')
-    entry_name.delete(0, 'end')
-    entry_password.delete(0, 'end')
-    entry_confirm_password.delete(0, 'end')
-    entry_email.delete(0, 'end')
-    entry_company.delete(0, 'end')
     register_frame.pack(pady=20)
+   
+    # Force redraw (optional but might help)
+    entry_username.update()
+    entry_name.update()
+    entry_email.update()
+    entry_password.update()
+    entry_confirm_password.update()
+    entry_company.update()
 
 def switch_to_login():
     register_frame.pack_forget()
@@ -158,11 +160,14 @@ def login_user():
     
     if result:
         stored_password = result[3]
-        if stored_password == hash_password(password):  # Compare hashed passwords
-         
-            subprocess.Popen(["python", r'C:\Users\Capaciti\Documents\GitHub\clocking-system\main.py']) 
-            app.quit()
+        if stored_password == hash_password(password):  
+          
+             
+             messagebox.showinfo("Success", f"Welcome, {username}")
+
+  
        
+             subprocess.Popen(["python", r'C:\Users\Capaciti\Documents\GitHub\clocking-system\main.py'])          
         else:
             messagebox.showerror("Error", "Invalid password")
     else:
@@ -230,10 +235,13 @@ def authenticate_with_face():
 
     for username, stored_face_encoding in users:
         stored_face_encoding = np.frombuffer(stored_face_encoding, dtype=np.float64)
-        matches = face_recognition.compare_faces([stored_face_encoding], face_encodings[0])
+        matches = face_recognition.compare_faces([stored_face_encoding], face_encodings[0], tolerance=0.5)
 
         if True in matches:
             messagebox.showinfo("Success", f"Welcome, {username}")
+            
+            subprocess.Popen(["python", r'C:\Users\Capaciti\Documents\GitHub\clocking-system\main.py'])          
+           
             conn.close()
             return
     
@@ -248,7 +256,7 @@ app = ctk.CTk()
 app.title("Registration and Login System")
 
 # Set window size and center it
-window_width = 450
+window_width = 800
 window_height = 500
 center_window(app, window_width, window_height)
  
@@ -270,6 +278,9 @@ frame_width = 400
 frame_height = 450
 
 # Registration Frame
+register_frame = ctk.CTkFrame(app, width=frame_width, height=frame_height)
+register_frame.pack_propagate(False)
+ 
 register_frame = ctk.CTkFrame(app, width=frame_width, height=frame_height)
 register_frame.pack(pady=20, padx=20, expand=True)
 
@@ -305,6 +316,9 @@ switch_to_login_btn.pack(pady=5)
 
 # Login Frame
 login_frame = ctk.CTkFrame(app, width=frame_width, height=frame_height)
+login_frame.pack_propagate(False)
+ 
+login_frame = ctk.CTkFrame(app, width=frame_width, height=frame_height)
 
 ctk.CTkLabel(login_frame, text="Login", font=("Arial", 24)).pack(pady=15)
 
@@ -325,9 +339,9 @@ face_recognition_button.pack(pady=10)
 account_label = ctk.CTkLabel(
     login_frame,
     text="Don't have an account? Register",
-    text_color="blue",  
+    text_color="grey",  
     cursor="hand2",  
-    font=("Arial", 14, "underline")  
+    font=("Arial", 14)  
 )
 
 
@@ -338,9 +352,9 @@ account_label.pack(pady=5)
 forgot_password_label = ctk.CTkLabel(
     login_frame,
     text="Forgot Password?",
-    text_color="blue", 
+    text_color="grey", 
     cursor="hand2", 
-    font=("Arial", 14, "underline") 
+    font=("Arial", 14 ) 
 )
 
 # Bind click event to the label
