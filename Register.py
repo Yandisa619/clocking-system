@@ -256,21 +256,21 @@ app = ctk.CTk()
 app.title("Registration and Login System")
 
 # Set window size and center it
-window_width = 800
+window_width = 400
 window_height = 500
 center_window(app, window_width, window_height)
  
-screen_width = app.winfo_screenwidth()
-screen_height = app.winfo_screenheight()
+# screen_width = app.winfo_screenwidth()
+# screen_height = app.winfo_screenheight()
  
-bg_image = ctk.CTkImage(
-    light_image=Image.open("pexels-googledeepmind-18069161.jpg"),
-    dark_image=Image.open("pexels-googledeepmind-18069161.jpg"),
-    size=(screen_width, screen_height)
-)
+# bg_image = ctk.CTkImage(
+#     light_image=Image.open("pexels-googledeepmind-18069161.jpg"),
+#     dark_image=Image.open("pexels-googledeepmind-18069161.jpg"),
+#     size=(screen_width, screen_height)
+# )
 
-bg_label = ctk.CTkLabel(app, image=bg_image, text="")
-bg_label.place(x=0, y=0, relwidth=1, relheight=1)
+# bg_label = ctk.CTkLabel(app, image=bg_image, text="")
+# bg_label.place(x=0, y=0, relwidth=1, relheight=1)
 
 
 # Common Frame Settings
@@ -309,11 +309,10 @@ capture_face_button = ctk.CTkButton(register_frame, text="Capture Face", width=2
 capture_face_button.pack(pady=15, padx=20)
 
 register_button = ctk.CTkButton(register_frame, text="Register", width=200, command=register_user)
-register_button.pack(pady=15, padx=20)
+register_button.pack(pady=10, padx=20)
 
 switch_to_login_btn = ctk.CTkButton(register_frame, text="Already have an account?", width=200, command=switch_to_login)
-switch_to_login_btn.pack(pady=5)
-
+switch_to_login_btn.pack(pady=(5, 20), padx=20) 
 # Login Frame
 login_frame = ctk.CTkFrame(app, width=frame_width, height=frame_height)
 login_frame.pack_propagate(False)
