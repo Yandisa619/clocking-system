@@ -128,10 +128,10 @@ def register_user():
         messagebox.showerror("Error", "No face detected. Please try again.")
         return
 
-    face_encoding = face_encodings[0]  # Capture first face
+    face_encoding = face_encodings[0] 
     face_encoding_blob = np.array(face_encoding).tobytes()
 
-    # Insert user into the database along with the face encoding
+    
     try:
         hashed_password = hash_password(password)
         cursor.execute('INSERT INTO users_info (username, name, password, email, company, face_encoding) VALUES (?, ?, ?, ?, ?, ?)',
@@ -156,7 +156,7 @@ def login_user():
     
     if result:
         stored_password = result[3]
-        if stored_password == hash_password(password):  # Compare hashed passwords
+        if stored_password == hash_password(password):  
             messagebox.showinfo("Success", f"Welcome, {result[1]}")
         else:
             messagebox.showerror("Error", "Invalid password")
@@ -207,10 +207,10 @@ def authenticate_with_face():
         messagebox.showerror("Error", "No face detected. Please try again.")
         return
 
-    # Compare face with stored faces in database
+    
     conn = sqlite3.connect('clocking_system.db')
     cursor = conn.cursor()
-    cursor.execute('SELECT username, face_encoding FROM users_info')
+    cursor.execute('SELECT username, face_encoding FROM admin_info')
     users = cursor.fetchall()
 
     for username, stored_face_encoding in users:
