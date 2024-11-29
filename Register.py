@@ -13,8 +13,10 @@ from email.mime.multipart import MIMEMultipart
 import face_recognition
 import cv2
 import numpy as np
+import subprocess
 
 
+#
 # Initialize database
 conn = sqlite3.connect('clocking_system.db')
 cursor = conn.cursor()
@@ -101,7 +103,7 @@ def register_user():
     conn = sqlite3.connect('clocking_system.db')
     cursor = conn.cursor()
     
-    cursor.execute('SELECT * FROM users_info WHERE username = ? OR email = ?', (username, email))
+    cursor.execute('SELECT * FROM admin_info WHERE username = ? OR email = ?', (username, email))
     existing_user = cursor.fetchone()
 
     if existing_user:
@@ -134,7 +136,7 @@ def register_user():
     
     try:
         hashed_password = hash_password(password)
-        cursor.execute('INSERT INTO users_info (username, name, password, email, company, face_encoding) VALUES (?, ?, ?, ?, ?, ?)',
+        cursor.execute('INSERT INTO admin_info (username, name, password, email, company, face_encoding) VALUES (?, ?, ?, ?, ?, ?)',
                        (username, name, hashed_password, email, company, face_encoding_blob))
         conn.commit()
         messagebox.showinfo("Success", "Registration Successful")
@@ -151,11 +153,16 @@ def login_user():
     conn = sqlite3.connect('clocking_system.db')
     cursor = conn.cursor()
     
-    cursor.execute('SELECT * FROM users_info WHERE username = ?', (username,))
+    cursor.execute('SELECT * FROM admin_info WHERE username = ?', (username,))
     result = cursor.fetchone()
     
     if result:
         stored_password = result[3]
+        if stored_password == hash_password(password):  # Compare hashed passwords
+         
+            subprocess.Popen(["python", r'C:\Users\Capaciti\Documents\GitHub\clocking-system\main.py']) 
+            app.quit()
+       
         if stored_password == hash_password(password):  
             messagebox.showinfo("Success", f"Welcome, {result[1]}")
         else:
@@ -190,6 +197,16 @@ def forgot_password(event=None):
     submit_button.pack(pady=10)
 
 
+def center_window(app, width, height):
+    screen_width = app.winfo_screenwidth()
+    screen_height = app.winfo_screenheight()
+    x = int((screen_width / 2) - (width / 2))
+    y = int((screen_height / 2) - (height / 2))
+   
+    app.geometry(f"{width}x{height}+{x}+{y}")
+ 
+
+
     #function for face 
 
 def authenticate_with_face():
@@ -210,6 +227,7 @@ def authenticate_with_face():
     
     conn = sqlite3.connect('clocking_system.db')
     cursor = conn.cursor()
+    cursor.execute('SELECT username, face_encoding FROM admin_info')
     cursor.execute('SELECT username, face_encoding FROM admin_info')
     users = cursor.fetchall()
 
@@ -232,7 +250,22 @@ ctk.set_default_color_theme("blue")
 app = ctk.CTk()
 app.title("Registration and Login System")
 
+# Set window size and center it
+window_width = 450
+window_height = 500
+center_window(app, window_width, window_height)
+ 
+screen_width = app.winfo_screenwidth()
+screen_height = app.winfo_screenheight()
+ 
+bg_image = ctk.CTkImage(
+    light_image=Image.open("pexels-googledeepmind-18069161.jpg"),
+    dark_image=Image.open("pexels-googledeepmind-18069161.jpg"),
+    size=(screen_width, screen_height)
+)
 
+bg_label = ctk.CTkLabel(app, image=bg_image, text="")
+bg_label.place(x=0, y=0, relwidth=1, relheight=1)
 
 
 # Common Frame Settings
