@@ -157,6 +157,51 @@ class ClockingApp(ctk.CTk):
         occupation_var = StringVar(value=user[5])
         occupation_menu = ctk.CTkOptionMenu(self.content_frame, values=["Software Candidate", "Networks Candidate", "Other"], variable=occupation_var, width=200)
         occupation_menu.pack(pady=(0, 20))
+
+        def update_picture():
+            video_capture = cv2.VideoCapture(0)
+            if not video_capture.isOpened():
+                messagebox.showerror("Camera Error", "Unable to access the camera. Please check your device.")
+                return 
+            messagebox.showinfo("Camera Active", "Look at the camera. Capturing your new face picture...")
+
+            face_captured = False 
+            while True:
+                ret, frame = video_capture.read()
+                if not ret:
+                    messagebox.showerror("Camera Error", "Failed to read from the camera. Please try again.")
+                    break
+
+                rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                face_locations = face_recognition.face_locations(rgb_frame, model="hog")
+
+                if face_locations:
+                    for (top, right, bottom, left) in face_locations:
+                        cv2.rectangle(frame, (left, top), (right, bottom), (0, 255, 0), 2)
+
+                    face_encodings = face_recognition.face_encodings(rgb_frame, face_locations)
+
+                    if len(face_encodings) > 0:
+                       face_encoding = face_encodings[0]
+                       encoded_face = face_encoding.tobytes()
+                       
+                       cursor = self.conn.cursor()
+                       cursor.execute("UPDATE users SET face_encoding = ? WHERE user_id = ?", (encoded_face, user[0]))
+                       self.conn.commit()
+
+                       self.load_known_faces()
+
+                       messagebox.showinfo("Success", "Face picture replaced successfully!")
+                       face_captured = True
+                       break
+                    cv2.imshow("Update Picture - User Registration", frame)
+
+                    key = cv2.waitKey(1)
+                    if key == ord('q'):
+                        break 
+
+                    video_capture.release()
+                    cv2.destroyAllWindows()
         
         def save_changes():
             new_name = name_entry.get()
@@ -178,7 +223,8 @@ class ClockingApp(ctk.CTk):
                 WHERE user_id = ?''', (new_name, new_gender, new_occupation, user[0]))
             self.conn.commit()
             self.show_admin_panel()
-
+        
+        ctk.CTkButton(self.content_frame, text="Update Picture", command=update_picture, width=200).pack(pady=10)
         ctk.CTkButton(self.content_frame, text="Save Changes", command=save_changes, width=200).pack(pady=20)
     
     # Logout Button
@@ -288,19 +334,38 @@ class ClockingApp(ctk.CTk):
 
         messagebox.showinfo("Clock In", "Looking for faces. Please face the camera.")
         face_recognized = False
+        start_time = time.time()
+        max_duration = 30
+
+        time.sleep(2)
+
+        
 
         while True:
            ret, frame = video_capture.read()
            if not ret:
             messagebox.showerror("Camera Error", "Failed to read from the camera. Please try again.")
             break
+           
+           elapsed_time = time.time() - start_time
+           remaining_time = max_duration - elapsed_time
+
+           if remaining_time <= 0:
+            messagebox.showwarning("Clock In Timeout", "Time exceeded. Please try again.")
+            break
+       
 
            rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
            face_locations = face_recognition.face_locations(rgb_frame, model="hog")
-
-           if not face_locations:
-              messagebox.showerror("Camera Error", "No faces detected.")
-              continue
+            
+           for top, right, bottom, left in face_locations:
+               cv2.rectangle(frame, (left, top), (right, bottom), (0, 255,0), 2)
+            
+           cv2.putText(frame, f"Time left:{int(remaining_time)} seconds", (10,30), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2, cv2.LINE_AA, )
+            
+           
+           cv2.imshow("Camera Feed - Press Q to Exit", frame)
+         
 
            face_encodings = face_recognition.face_encodings(rgb_frame, face_locations)
  
@@ -332,6 +397,10 @@ class ClockingApp(ctk.CTk):
         messagebox.showinfo("Clock Out", "Looking for faces to clock out. Please face the camera.")
         face_recognized = False
         retries = 0
+        start_time = time.time()
+        max_duration = 30
+
+        time.sleep(1)
 
         while True:
             ret, frame = video_capture.read()
@@ -344,6 +413,12 @@ class ClockingApp(ctk.CTk):
                continue
 
             retries = 0
+
+            elapsed_time = time.time() - start_time
+            if elapsed_time > max_duration:  
+             messagebox.showwarning("Clock Out Timeout", "Time exceeded. Please try again.")
+             break
+
             
             
 
@@ -455,18 +530,19 @@ class ClockingApp(ctk.CTk):
             conn.commit()
             user_id = cursor.lastrowid
 
-        attempt_counter = 0
+        face_captured = False
+        retries = 0
+        max_retries = 5 
+        capture_timeout = 10
         start_time = time.time()
-        capture_time = 10 
-        retry = False
 
-        
-
-        for _ in range(5):
+        while retries < max_retries:
             ret, frame = video_capture.read()
             if not ret:
-                messagebox.showerror("Camera Error", f"Attempt {attempt_counter + 1}: Failed to read from the camera. Please try again.")
-                break
+                messagebox.showerror("Camera Error",f"Attempt {retries + 1}: Failed to read from the camera. Retrying...")
+                retries += 1
+                continue 
+                
             
             rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
             face_locations = face_recognition.face_locations(rgb_frame, model = "hog")
@@ -498,7 +574,7 @@ class ClockingApp(ctk.CTk):
                     break
        
 
-            cv2.imshow("Camera", frame)
+            cv2.imshow("Camera - User Registration", frame)
 
             key = cv2.waitKey(1)
 
@@ -508,7 +584,7 @@ class ClockingApp(ctk.CTk):
             attempt_counter +=1
 
             elapsed_time = time.time() - start_time
-            if elapsed_time >= capture_time:
+            if elapsed_time >= capture_timeout:
                 retry = messagebox.askretrycancel("Timeout", "Face capture timed out. Please try again.")
                 if retry:
                  start_time = time.time()
@@ -517,8 +593,11 @@ class ClockingApp(ctk.CTk):
             else:
                 break
 
+        retries += 1
+
         video_capture.release()
         cv2.destroyAllWindows()
+        
         if face_captured:
             messagebox.showinfo("Success", "Face registered successfully!")
         else:
