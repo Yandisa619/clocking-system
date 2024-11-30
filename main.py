@@ -427,7 +427,7 @@ class ClockingApp(ctk.CTk):
             face_locations = face_recognition.face_locations(rgb_frame, model="hog")
 
             if not face_locations:
-                messagebox.showwarning("Camera Error", "No faces detected.")
+                print("Camera Error", "No faces detected.")
                 continue
             
             face_encodings = face_recognition.face_encodings(rgb_frame, face_locations)
