@@ -14,7 +14,7 @@ import subprocess
 # Database setup
 conn = sqlite3.connect('clocking_system.db')
 cursor = conn.cursor()
-cursor.execute("PRAGMA foreign_keys = ON;")
+cursor.execute("PRAGMA foreign_keys = ON")
 cursor.execute('''CREATE TABLE IF NOT EXISTS clock_logs (
                       id INTEGER PRIMARY KEY AUTOINCREMENT,
                       user_id INTEGER NOT NULL,
@@ -406,9 +406,9 @@ class ClockingApp(ctk.CTk):
             ret, frame = video_capture.read()
             if not ret:
                retries +=1
-               messagebox.showerror("Camera Error", "No faces detected, You have 3 attempts left.")
+               print("Camera Error", "No faces detected, You have 3 attempts left.")
                if retries >= 3:
-                  messagebox.showerror("Camera Error", "Unable to capture video after multiple attempts.")
+                  print("Camera Error", "Unable to capture video after multiple attempts.")
                   break
                continue
 
