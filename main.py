@@ -237,7 +237,7 @@ class ClockingApp(ctk.CTk):
         self.current_user = None
         self.destroy()
 
-        registration_screen_path = r"C:\Users\Yandisa\OneDrive - Cape IT Initiative\Documents\GitHub\clocking-system\Register.py"
+        registration_screen_path = r"C:\Users\CAPACITI\OneDrive - EOH\Documents\clocking-system\Register.py"
         subprocess.Popen(["python", registration_screen_path])
 
     def delete_user(self, user):

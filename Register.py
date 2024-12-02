@@ -167,7 +167,7 @@ def login_user():
 
   
        
-             subprocess.Popen(["python", r'C:\Users\Capaciti\Documents\GitHub\clocking-system\main.py'])          
+             subprocess.Popen(["python", r'C:\Users\CAPACITI\OneDrive - EOH\Documents\clocking-system\main.py'])          
         else:
             messagebox.showerror("Error", "Invalid password")
     else:
@@ -240,7 +240,7 @@ def authenticate_with_face():
         if True in matches:
             messagebox.showinfo("Success", f"Welcome, {username}")
             
-            subprocess.Popen(["python", r'C:\Users\Capaciti\Documents\GitHub\clocking-system\main.py'])          
+            subprocess.Popen(["python", r'C:\Users\CAPACITI\OneDrive - EOH\Documents\clocking-system\main.py'])          
            
             conn.close()
             return
